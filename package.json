@@ -1,0 +1,15 @@
+{
+  "name": "ai-coding-event-bridge-root",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Durable AI coding event capture bridge for Claude Code, Codex and OpenCode with atomic commit boundaries.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/run-all.js"
+  }
+}
