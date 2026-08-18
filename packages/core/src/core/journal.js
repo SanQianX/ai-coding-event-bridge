@@ -170,6 +170,17 @@ class Journal {
       }
       return;
     }
+    if (eventType === 'assistant_response' && !turnId && sessionId) {
+      // Same rule as turn-identity: bind by session only when it is unambiguous.
+      const matches = Object.values(this._state.openTurns).filter(
+        (turn) => turn.repoIdentity === repoIdentity && turn.sessionId === sessionId
+      );
+      if (matches.length === 1) {
+        matches[0].endSequence = record.sequence;
+        delete this._state.openTurns[turnKey(repoIdentity, matches[0].turnId)];
+      }
+      return;
+    }
     if (eventType === 'session_end' && sessionId) {
       for (const key of Object.keys(this._state.openTurns)) {
         const turn = this._state.openTurns[key];

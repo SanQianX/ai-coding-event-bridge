@@ -1,0 +1,7 @@
+{
+  "type": "assistant",
+  "sessionId": "oc-sess-77",
+  "turnId": "oc-turn-12",
+  "cwd": "/work/service",
+  "text": "Refactored the parser."
+}

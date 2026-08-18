@@ -1,0 +1,8 @@
+{
+  "hookName": "Stop",
+  "session_id": "sess-abc",
+  "transcript_path": "/home/user/.claude/projects/-repo/sess-abc.jsonl",
+  "cwd": "/work/repo",
+  "stop_hook_active": false,
+  "last_assistant_message": "Fixed the retry loop in auth.js"
+}

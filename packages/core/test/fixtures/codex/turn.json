@@ -1,0 +1,11 @@
+{
+  "eventType": "user_prompt",
+  "sessionId": "codex-sess-9f2",
+  "turnId": "codex-turn-41",
+  "content": "Add unit tests for the parser",
+  "repoIdentity": "github.com/acme/widgets",
+  "projectPath": "/work/widgets",
+  "identityConfidence": "exact",
+  "captureStatus": "complete",
+  "rawEventType": "turn.started"
+}

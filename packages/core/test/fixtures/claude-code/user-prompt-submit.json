@@ -1,0 +1,7 @@
+{
+  "hookName": "UserPromptSubmit",
+  "session_id": "sess-abc",
+  "transcript_path": "/home/user/.claude/projects/-repo/sess-abc.jsonl",
+  "cwd": "/work/repo",
+  "prompt": "Fix the login retry loop"
+}
