@@ -37,7 +37,9 @@ class CrossProcessLock {
         this._held = true;
         return;
       } catch (err) {
-        if (!err || err.code !== 'EEXIST') throw err;
+        // EEXIST: lock file present. EPERM/EBUSY: Windows reports these when
+        // another process holds the file without a sharing mode — still "locked".
+        if (!err || !['EEXIST', 'EPERM', 'EBUSY'].includes(err.code)) throw err;
       }
       try {
         const st = fs.statSync(this.lockFile);
