@@ -31,14 +31,14 @@ async function main() {
 
   // npm pack contents include the license/readme; tests never ship.
   const corePack = JSON.parse(
-    execFileSync('npm', ['pack', '--workspace', 'packages/core', '--dry-run', '--json'], { cwd: ROOT, encoding: 'utf8' })
+    execFileSync('npm', ['pack', '--workspace', 'packages/core', '--dry-run', '--json'], { cwd: ROOT, encoding: 'utf8', shell: true })
   );
   const coreFiles = corePack[0].files.map(f => f.path);
   assert(coreFiles.includes('LICENSE') || coreFiles.includes('README.md'), 'core tarball carries package legal files');
   assert(!coreFiles.some(f => f.startsWith('test/')), 'tests never ship');
 
   const uiPack = JSON.parse(
-    execFileSync('npm', ['pack', '--workspace', 'packages/ui', '--dry-run', '--json'], { cwd: ROOT, encoding: 'utf8' })
+    execFileSync('npm', ['pack', '--workspace', 'packages/ui', '--dry-run', '--json'], { cwd: ROOT, encoding: 'utf8', shell: true })
   );
   const uiFiles = uiPack[0].files.map(f => f.path);
   assert(uiFiles.includes('src/conversation-explorer.css'), 'explorer css ships');
