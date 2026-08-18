@@ -65,12 +65,21 @@ function readStdin() {
 const RUNTIME_HOOK_SOURCE = `#!/usr/bin/env node
 'use strict';
 async function main({ payload, home, argv, env }) {
-  if (payload && (payload.session_id || payload.sessionId) && !payload.hookName) {
-    const codexEntry = require('./bridge/connectors/codex/hook-entry.js');
-    return codexEntry.mainFailOpen({ home, payload });
+  if (payload && typeof payload === 'object') {
+    if (payload.hookName) {
+      const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');
+      return claudeEntry.mainFailOpen({ home, payload, argv, env });
+    }
+    if (payload.type === 'user' || payload.type === 'assistant') {
+      const opencodeEntry = require('./bridge/connectors/opencode/hook-entry.js');
+      return opencodeEntry.mainFailOpen({ home, payload });
+    }
+    if (payload.session_id || payload.sessionId) {
+      const codexEntry = require('./bridge/connectors/codex/hook-entry.js');
+      return codexEntry.mainFailOpen({ home, payload });
+    }
   }
-  const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');
-  return claudeEntry.mainFailOpen({ home, payload, argv, env });
+  return { status: 'ignored' };
 }
 module.exports = { main };
 `;
