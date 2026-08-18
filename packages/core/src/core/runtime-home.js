@@ -65,6 +65,10 @@ function readStdin() {
 const RUNTIME_HOOK_SOURCE = `#!/usr/bin/env node
 'use strict';
 async function main({ payload, home, argv, env }) {
+  if (payload && (payload.session_id || payload.sessionId) && !payload.hookName) {
+    const codexEntry = require('./bridge/connectors/codex/hook-entry.js');
+    return codexEntry.mainFailOpen({ home, payload });
+  }
   const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');
   return claudeEntry.mainFailOpen({ home, payload, argv, env });
 }
