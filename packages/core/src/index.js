@@ -17,6 +17,8 @@ const {
   assertNoSyntheticEvidence
 } = require('./core/turn-identity');
 const { normalizeClaudeCode, normalizeCodex, normalizeOpenCode } = require('./core/normalizer');
+const claudeHookEntry = require('./connectors/claude-code/hook-entry');
+const claudeInstaller = require('./installers/claude-code/installer');
 
 module.exports = {
   packageName: packageInfo.name,
@@ -42,5 +44,7 @@ module.exports = {
   assertNoSyntheticEvidence,
   normalizeClaudeCode,
   normalizeCodex,
-  normalizeOpenCode
+  normalizeOpenCode,
+  claudeHookEntry,
+  claudeInstaller
 };

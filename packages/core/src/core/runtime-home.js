@@ -4,18 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const { bridgeHome } = require('./paths');
 const { CrossProcessLock, lockPathFor } = require('./lock');
-const { writeJsonAtomicSync, readJsonIfExists, ensureDirSync } = require('./fs-utils');
+const { writeJsonAtomicSync, readJsonIfExists, ensureDirSync, copyDirSync } = require('./fs-utils');
 const semver = require('./semver');
-
-const SHIM_PATH_PARTS = ['bin', 'bridge-hook.cjs'];
 
 // The shim is intentionally version-independent: AI client configs point at this
 // stable path forever, and it delegates to whatever runtime version is active.
+// It reads the client payload from stdin, forwards it to the active runtime and
+// always exits 0 — fail-open is a product invariant.
 const SHIM_SOURCE = `#!/usr/bin/env node
 'use strict';
-// Stable per-user Bridge hook shim. Managed AI client entries always point here,
-// never into any host's node_modules. Fail-open: a broken Bridge must never
-// block the AI client itself.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -24,32 +21,73 @@ function home() {
   return process.env.AI_CODING_EVENT_BRIDGE_HOME || path.join(os.homedir(), '.ai-coding-event-bridge');
 }
 
-async function main() {
-  const active = JSON.parse(fs.readFileSync(path.join(home(), 'active-runtime.json'), 'utf8'));
-  const hookPath = path.join(home(), 'runtime', String(active.version), 'hook.cjs');
-  if (!fs.existsSync(hookPath)) return;
-  const runtime = require(hookPath);
-  if (typeof runtime.main === 'function') {
-    await runtime.main({ argv: process.argv.slice(2), env: process.env, home: home() });
-  }
+function readStdin() {
+  return new Promise((resolve) => {
+    let data = '';
+    try {
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (chunk) => (data += chunk));
+      process.stdin.on('end', () => resolve(data));
+      process.stdin.on('error', () => resolve(data));
+    } catch (_) {
+      resolve(data);
+    }
+  });
 }
 
-main().catch(() => {
-  // Fail open by design. Diagnostics belong to the runtime's own journal, not stderr noise.
-});
+(async () => {
+  try {
+    const raw = await readStdin();
+    let payload = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch (_) {
+      payload = null;
+    }
+    const active = JSON.parse(fs.readFileSync(path.join(home(), 'active-runtime.json'), 'utf8'));
+    const hookPath = path.join(home(), 'runtime', String(active.version), 'hook.cjs');
+    if (fs.existsSync(hookPath)) {
+      const runtime = require(hookPath);
+      if (typeof runtime.main === 'function') {
+        await runtime.main({ payload, home: home(), argv: process.argv.slice(2), env: process.env });
+      }
+    }
+  } catch (_) {
+    // Fail open by design: a broken Bridge must never block the AI client.
+  } finally {
+    process.exit(0);
+  }
+})();
 `;
 
+// The versioned runtime entry: dispatches the client payload into the
+// self-contained bridge tree materialized next to it.
 const RUNTIME_HOOK_SOURCE = `#!/usr/bin/env node
 'use strict';
-// Runtime hook implementation for this Bridge version. Connectors attach here
-// in later commits; the default implementation is a durable no-op that always
-// exits 0 so AI clients are never blocked.
-async function main() {
-  return { status: 'no-op' };
+async function main({ payload, home, argv, env }) {
+  const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');
+  return claudeEntry.mainFailOpen({ home, payload, argv, env });
 }
-
 module.exports = { main };
 `;
+
+function materializeBridgeTree(runtimeDir) {
+  const srcRoot = path.join(__dirname, '..');
+  copyDirSync(path.join(srcRoot, 'core'), path.join(runtimeDir, 'bridge', 'core'));
+  copyDirSync(path.join(srcRoot, 'connectors'), path.join(runtimeDir, 'bridge', 'connectors'));
+}
+
+function writeTextAtomicSync(file, content) {
+  const tmp = `${file}.tmp`;
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, content);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, file);
+}
 
 async function ensureRuntimeHome({ homeDir, version } = {}) {
   const home = bridgeHome(homeDir);
@@ -61,16 +99,8 @@ async function ensureRuntimeHome({ homeDir, version } = {}) {
     ensureDirSync(path.join(home, 'journal'));
     ensureDirSync(path.join(home, 'locks'));
 
-    const shimPath = path.join(home, ...SHIM_PATH_PARTS);
-    const tmpShim = `${shimPath}.tmp`;
-    const fd = fs.openSync(tmpShim, 'w');
-    try {
-      fs.writeSync(fd, SHIM_SOURCE);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    fs.renameSync(tmpShim, shimPath);
+    const shimPath = path.join(home, 'bin', 'bridge-hook.cjs');
+    writeTextAtomicSync(shimPath, SHIM_SOURCE);
 
     const runtimeDir = path.join(home, 'runtime', requestedVersion);
     const activeFile = path.join(home, 'active-runtime.json');
@@ -78,18 +108,8 @@ async function ensureRuntimeHome({ homeDir, version } = {}) {
 
     const materializeRuntime = () => {
       ensureDirSync(runtimeDir);
-      const hookPath = path.join(runtimeDir, 'hook.cjs');
-      if (!fs.existsSync(hookPath)) {
-        const tmp = `${hookPath}.tmp`;
-        const hfd = fs.openSync(tmp, 'w');
-        try {
-          fs.writeSync(hfd, RUNTIME_HOOK_SOURCE);
-          fs.fsyncSync(hfd);
-        } finally {
-          fs.closeSync(hfd);
-        }
-        fs.renameSync(tmp, hookPath);
-      }
+      writeTextAtomicSync(path.join(runtimeDir, 'hook.cjs'), RUNTIME_HOOK_SOURCE);
+      materializeBridgeTree(runtimeDir);
       if (!fs.existsSync(path.join(runtimeDir, 'manifest.json'))) {
         writeJsonAtomicSync(path.join(runtimeDir, 'manifest.json'), {
           version: requestedVersion,

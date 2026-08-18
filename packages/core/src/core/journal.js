@@ -101,8 +101,8 @@ class Journal {
     if (event.eventId !== undefined) {
       throw new JournalValidationError('event.eventId is journal-owned and must not be supplied');
     }
-    if (event.turnId !== undefined && typeof event.turnId !== 'string') {
-      throw new JournalValidationError('event.turnId must be a string when present');
+    if (event.turnId !== undefined && event.turnId !== null && typeof event.turnId !== 'string') {
+      throw new JournalValidationError('event.turnId must be a string or null when present');
     }
     if (event.sessionId !== undefined && event.sessionId !== null && typeof event.sessionId !== 'string') {
       throw new JournalValidationError('event.sessionId must be a string or null');

@@ -52,4 +52,17 @@ function ensureDirSync(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-module.exports = { fsyncDir, appendLineSync, writeJsonAtomicSync, readJsonIfExists, ensureDirSync };
+function copyDirSync(src, dest) {
+  ensureDirSync(dest);
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(from, to);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
+module.exports = { fsyncDir, appendLineSync, writeJsonAtomicSync, readJsonIfExists, ensureDirSync, copyDirSync };
