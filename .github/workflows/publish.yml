@@ -1,0 +1,57 @@
+name: Publish packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Exact verified commit SHA to publish (40 hex chars)'
+        required: true
+      version:
+        description: 'Package version being published (must match package.json at expected_sha)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-publish:
+    name: Verify SHA and publish core + ui
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Verify dispatch inputs against the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="${GITHUB_SHA}"
+          expected="${{ inputs.expected_sha }}"
+          if [ "${#expected}" -ne 40 ] || [ "${actual,,}" != "${expected,,}" ]; then
+            echo "Refusing to publish: expected_sha (${expected}) does not match the dispatched commit (${actual})."
+            exit 1
+          fi
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          registry-url: https://registry.npmjs.org
+      - name: Verify declared version matches package manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          declared="${{ inputs.version }}"
+          core=$(node -p "require('./packages/core/package.json').version")
+          ui=$(node -p "require('./packages/ui/package.json').version")
+          if [ "$declared" != "$core" ] || [ "$declared" != "$ui" ]; then
+            echo "Refusing to publish: version inputs ($declared) differ from core ($core) / ui ($ui)."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm test
+      - name: Publish core with provenance
+        run: npm publish --workspace packages/core --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+      - name: Publish ui with provenance
+        run: npm publish --workspace packages/ui --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
