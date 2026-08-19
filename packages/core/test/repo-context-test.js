@@ -20,6 +20,13 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+// Windows CI runners hand out 8.3 short TEMP paths (RUNNER~1) which
+// realpathSync.native expands (runneradmin); expectations must compare the
+// expanded form, exactly like the PK side handles its runner TEMP.
+function real(target) {
+  try { return fs.realpathSync.native(target) || target; } catch (_) { return target; }
+}
+
 function gitIdentity(dir, originUrl) {
   return (async () => {
     await run('git', ['init', '-q'], { cwd: dir });
@@ -72,7 +79,7 @@ async function main() {
   assert.strictEqual(ctxRoot.repoIdentity.remote, 'github.com/acme/ccs');
   assert.strictEqual(ctxRoot.branch, 'main');
   assert.match(ctxRoot.headAtCapture, /^[0-9a-f]{40}$/);
-  assert.strictEqual(ctxRoot.projectPath, path.resolve(ccs));
+  assert.strictEqual(ctxRoot.projectPath, real(ccs));
 
   // 1. nested folder inside the repo resolves to the same workspaceId.
   const nested = path.join(ccs, 'modules', 'foo');
@@ -127,11 +134,11 @@ async function main() {
   await gitIdentity(unicodeRoot, null);
   const ctxUnicode = await resolveRepoContext(unicodeRoot);
   assert.strictEqual(ctxUnicode.identityConfidence, 'exact');
-  assert.strictEqual(ctxUnicode.repoIdentity.workspaceRoot, path.resolve(unicodeRoot));
+  assert.strictEqual(ctxUnicode.repoIdentity.workspaceRoot, real(unicodeRoot));
 
   // Mandatory test 8: origin missing => workspace still exact, remote null.
   assert.strictEqual(ctxUnicode.repoIdentity.remote, null);
-  assert.strictEqual(ctxUnicode.repoIdentity.commonDir, path.join(path.resolve(unicodeRoot), '.git'));
+  assert.strictEqual(ctxUnicode.repoIdentity.commonDir, path.join(real(unicodeRoot), '.git'));
 
   console.log('repo-context-test PASS');
 }
