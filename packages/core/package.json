@@ -4,6 +4,11 @@
   "description": "Durable AI coding event capture bridge core: connectors, normalizer, journal, commit boundaries, consumer cursors and headless conversation query.",
   "license": "MIT",
   "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SanQianX/ai-coding-event-bridge",
+    "directory": "packages/core"
+  },
   "main": "src/index.js",
   "engines": {
     "node": ">=18"
