@@ -135,6 +135,49 @@ async function main() {
   const codeBroken = await runShim(HOME, JSON.stringify({ hookName: 'UserPromptSubmit', prompt: 'x' }));
   assert.strictEqual(codeBroken, 0, 'broken runtime must still fail open');
 
+  // Real Claude Code payload schema: hook_event_name (not hookName), with
+  // session_id present. Regression: such payloads previously fell through to
+  // the Codex connector (because of session_id) and produced a
+  // session-file-not-found gap instead of a captured event.
+  const beforeReal = (await journal.readEvents({})).length;
+  const realSchema = await hookEntry.main({
+    home: HOME,
+    payload: {
+      hook_event_name: 'UserPromptSubmit',
+      session_id: '388635a4-a956-4fe0-91b4-b92c3074fccf',
+      cwd: HOME,
+      prompt: 'real claude code schema prompt',
+    },
+  });
+  assert.strictEqual(realSchema.status, 'captured', 'hook_event_name payloads route to the Claude connector');
+  const realEvents = await journal.readEvents({});
+  assert.strictEqual(realEvents.length, beforeReal + 1);
+  assert.ok(realEvents[realEvents.length - 1].content === 'real claude code schema prompt');
+  assert.strictEqual(realEvents[realEvents.length - 1].source, 'claude-code');
+
+  // Runtime dispatcher: hook_event_name must select the Claude entry even
+  // though the payload also carries session_id (Codex shape overlap).
+  const runtimeHook = require(path.join(HOME, 'runtime', '0.1.0', 'hook.cjs'));
+  const dispatched = await runtimeHook.main({
+    payload: { hook_event_name: 'UserPromptSubmit', session_id: 's-real', cwd: HOME, prompt: 'dispatch check' },
+    home: HOME,
+    env: process.env,
+  });
+  assert.strictEqual(dispatched.status, 'captured', 'dispatcher routes hook_event_name to Claude, not Codex');
+
+  // Stop with last_assistant_message under the real schema closes the turn.
+  const realStop = await hookEntry.main({
+    home: HOME,
+    payload: {
+      hook_event_name: 'Stop',
+      session_id: '388635a4-a956-4fe0-91b4-b92c3074fccf',
+      cwd: HOME,
+      last_assistant_message: 'real claude code schema reply',
+    },
+  });
+  assert.strictEqual(realStop.status, 'captured');
+  assert.strictEqual(realStop.turnId, realSchema.turnId, 'Stop closes the UserPromptSubmit turn');
+
   console.log('claude-connector-fixture-test PASS');
 }
 

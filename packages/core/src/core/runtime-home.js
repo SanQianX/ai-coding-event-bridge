@@ -71,7 +71,10 @@ async function main({ payload, home, argv, env }) {
     return { status: 'ignored', reason: 'capture-disabled' };
   }
   if (payload && typeof payload === 'object') {
-    if (payload.hookName) {
+    // Claude Code ships hook_event_name (also seen as hookName/hook_name);
+    // all three identify a Claude hook payload and MUST route to the Claude
+    // connector — never fall through to Codex just because session_id exists.
+    if (payload.hookName || payload.hook_event_name || payload.hook_name) {
       const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');
       return claudeEntry.mainFailOpen({ home, payload, argv, env });
     }

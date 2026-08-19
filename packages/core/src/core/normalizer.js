@@ -11,15 +11,21 @@ function assignTurnIdForPrompt() {
 
 /**
  * Claude Code hook payload -> normalized event.
- * UserPromptSubmit carries the exact user prompt; Stop yields an
- * assistant_response only when last_assistant_message exists — an empty Stop
- * is not conversation evidence and produces no event. Turn closure binding
- * happens in the journal's canonical append path.
+ * Claude Code ships the event name as hook_event_name; hookName/hook_name
+ * variants are accepted for compatibility. UserPromptSubmit carries the exact
+ * user prompt; Stop yields an assistant_response only when
+ * last_assistant_message exists — an empty Stop is not conversation evidence
+ * and produces no event. Turn closure binding happens in the journal's
+ * canonical append path.
  */
+function hookEventName(raw) {
+  return raw.hook_event_name || raw.hookName || raw.hook_name || null;
+}
+
 function normalizeClaudeCode(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const base = { source: 'claude-code' };
-  if (raw.hookName === 'UserPromptSubmit' || raw.eventType === 'user_prompt') {
+  if (hookEventName(raw) === 'UserPromptSubmit' || raw.eventType === 'user_prompt') {
     const content = typeof raw.prompt === 'string' ? raw.prompt : null;
     const event = {
       ...base,
@@ -32,11 +38,11 @@ function normalizeClaudeCode(raw) {
       projectPath: raw.cwd,
       identityConfidence: content === null ? 'partial' : 'exact',
       captureStatus: content === null ? 'partial' : 'complete',
-      rawEventType: raw.hookName || 'user_prompt'
+      rawEventType: hookEventName(raw) || 'user_prompt'
     };
     return validateAndNormalizeEvent(event);
   }
-  if (raw.hookName === 'Stop' || raw.eventType === 'assistant_response') {
+  if (hookEventName(raw) === 'Stop' || raw.eventType === 'assistant_response') {
     if (typeof raw.last_assistant_message !== 'string' || !raw.last_assistant_message) {
       return null;
     }
@@ -51,7 +57,7 @@ function normalizeClaudeCode(raw) {
       projectPath: raw.cwd,
       identityConfidence: 'partial',
       captureStatus: 'complete',
-      rawEventType: raw.hookName || 'assistant_response'
+      rawEventType: hookEventName(raw) || 'assistant_response'
     });
   }
   return null;
