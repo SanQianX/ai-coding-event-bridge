@@ -20,11 +20,12 @@ async function main() {
   assert(publish.includes('npm publish --workspace packages/core') && publish.includes('npm publish --workspace packages/ui'));
 
   // Package metadata: license + readme ship, versions stay in lockstep, engine >=18.
+  const declared = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages', 'core', 'package.json'), 'utf8')).version;
   for (const pkg of ['packages/core', 'packages/ui']) {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, pkg, 'package.json'), 'utf8'));
     assert.strictEqual(manifest.license, 'MIT');
     assert.strictEqual(manifest.engines.node, '>=18');
-    assert.strictEqual(manifest.version, '0.1.0');
+    assert.strictEqual(manifest.version, declared, 'workspace package versions stay in lockstep');
   }
   assert(fs.existsSync(path.join(ROOT, 'LICENSE')), 'repository license present');
   assert(fs.existsSync(path.join(ROOT, 'README.md')), 'repository readme present');
