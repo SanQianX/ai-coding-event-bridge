@@ -63,6 +63,7 @@ async function main() {
   };
   const stopResult = await hookEntry.mainFailOpen({ home: HOME, payload: stopPayload });
   assert.strictEqual(stopResult.status, 'captured');
+  assert.strictEqual(stopResult.turnId, captured.turnId, 'user + Stop pair shares one durable turnId');
 
   const journal = new Journal(path.join(HOME, 'journal'));
   const events = await journal.readEvents({});
@@ -78,6 +79,38 @@ async function main() {
   // Fail-open: a broken payload must never throw.
   const broken = await hookEntry.mainFailOpen({ home: HOME, payload: { hookName: 'Nope' } });
   assert.strictEqual(broken.status, 'ignored');
+
+  // Capture-disable: internal SDK sessions never touch the journal.
+  const beforeDisabled = (await journal.readEvents({})).length;
+  const previousCapture = process.env.AI_CODING_EVENT_BRIDGE_CAPTURE;
+  process.env.AI_CODING_EVENT_BRIDGE_CAPTURE = '0';
+  try {
+    const disabled = await hookEntry.main({
+      home: HOME,
+      payload: { hookName: 'UserPromptSubmit', session_id: 'sess-internal', cwd: HOME, prompt: 'internal workbench prompt' }
+    });
+    assert.deepStrictEqual(disabled, { status: 'ignored', reason: 'capture-disabled' });
+    assert.strictEqual(
+      (await journal.readEvents({})).length,
+      beforeDisabled,
+      'capture-disabled session must not increment journal sequence'
+    );
+  } finally {
+    if (previousCapture === undefined) delete process.env.AI_CODING_EVENT_BRIDGE_CAPTURE;
+    else process.env.AI_CODING_EVENT_BRIDGE_CAPTURE = previousCapture;
+  }
+
+  // Invalid cwd: captured as unavailable, never guessed into a repo.
+  const invalidCwd = await hookEntry.main({
+    home: HOME,
+    payload: { hookName: 'UserPromptSubmit', session_id: 'sess-nogit', cwd: path.join(HOME, 'not-a-repo', 'deeper'), prompt: 'outside git' }
+  });
+  assert.strictEqual(invalidCwd.status, 'captured');
+  const noGitEvents = await journal.readEvents({});
+  const noGitEvent = noGitEvents.find((e) => e.sessionId === 'sess-nogit');
+  assert.ok(noGitEvent, 'non-git prompt is still durable evidence');
+  assert.strictEqual(noGitEvent.repoIdentity, null, 'never guessed into a repo');
+  assert.match(noGitEvent.turnId, /^turn_/, 'canonical durable turn id assigned even outside a repo');
 
   // Durable capture BEFORE notification: a live consumer is notified only
   // after the event is already readable from the journal.

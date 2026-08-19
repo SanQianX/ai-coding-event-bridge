@@ -1,5 +1,7 @@
 'use strict';
 
+const { isValidRepoIdentityV1 } = require('./repo-context');
+
 const SOURCES = ['claude-code', 'codex', 'opencode'];
 const IDENTITY_CONFIDENCE_LEVELS = ['exact', 'partial', 'unavailable'];
 const CAPTURE_STATUSES = ['complete', 'partial', 'gap'];
@@ -20,6 +22,16 @@ function evidenceLevelFor({ sessionId, turnId }) {
   if (sessionId && turnId) return 'exact';
   if (sessionId || turnId) return 'partial';
   return 'unavailable';
+}
+
+const CONFIDENCE_RANK = { unavailable: 0, partial: 1, exact: 2 };
+
+function clampConfidence(requested, evidence) {
+  return CONFIDENCE_RANK[requested] <= CONFIDENCE_RANK[evidence] ? requested : evidence;
+}
+
+function raiseConfidenceToEvidence(current, evidence) {
+  return CONFIDENCE_RANK[evidence] > CONFIDENCE_RANK[current] ? evidence : current;
 }
 
 function validateAndNormalizeEvent(input) {
@@ -59,6 +71,19 @@ function validateAndNormalizeEvent(input) {
   ) {
     throw new EventSchemaError('identityConfidence must be exact, partial or unavailable', 'identityConfidence');
   }
+  if (input.repoIdentity !== undefined && input.repoIdentity !== null) {
+    // New automatic data must use repo-identity/v1 objects from
+    // resolveRepoContext. Plain strings are legacy records only; malformed
+    // objects are rejected so a guessed identity can never enter the journal.
+    if (typeof input.repoIdentity !== 'string' && !isValidRepoIdentityV1(input.repoIdentity)) {
+      throw new EventSchemaError('repoIdentity must be a valid repo-identity/v1 object, a legacy string, or null', 'repoIdentity');
+    }
+  }
+  if (input.eventKey !== undefined && input.eventKey !== null) {
+    if (typeof input.eventKey !== 'string' || !input.eventKey) {
+      throw new EventSchemaError('eventKey must be a non-empty string when present', 'eventKey');
+    }
+  }
   if (input.captureStatus !== undefined && !CAPTURE_STATUSES.includes(input.captureStatus)) {
     throw new EventSchemaError('captureStatus must be complete, partial or gap', 'captureStatus');
   }
@@ -66,8 +91,7 @@ function validateAndNormalizeEvent(input) {
   // Confidence may never overstate the captured evidence.
   const evidenceLevel = evidenceLevelFor({ sessionId, turnId });
   const requested = input.identityConfidence || evidenceLevel;
-  const rank = { unavailable: 0, partial: 1, exact: 2 };
-  const identityConfidence = rank[requested] <= rank[evidenceLevel] ? requested : evidenceLevel;
+  const identityConfidence = clampConfidence(requested, evidenceLevel);
 
   const normalized = {
     source: input.source,
@@ -79,6 +103,7 @@ function validateAndNormalizeEvent(input) {
     captureStatus: input.captureStatus || 'complete'
   };
   if (input.content !== undefined) normalized.content = input.content;
+  if (input.eventKey !== undefined) normalized.eventKey = input.eventKey;
   if (input.repoIdentity !== undefined) normalized.repoIdentity = input.repoIdentity;
   if (input.projectPath !== undefined) normalized.projectPath = input.projectPath;
   if (input.branch !== undefined) normalized.branch = input.branch;
@@ -95,5 +120,8 @@ module.exports = {
   SOURCES,
   IDENTITY_CONFIDENCE_LEVELS,
   CAPTURE_STATUSES,
-  FORBIDDEN_SESSION_IDS
+  FORBIDDEN_SESSION_IDS,
+  evidenceLevelFor,
+  clampConfidence,
+  raiseConfidenceToEvidence
 };

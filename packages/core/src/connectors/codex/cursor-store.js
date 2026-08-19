@@ -31,8 +31,11 @@ class CodexCursorStore {
       filePath: state.filePath,
       byteOffset: Number.isInteger(state.byteOffset) ? state.byteOffset : 0,
       lastRecordKey: state.lastRecordKey || null,
+      activeCwd: state.activeCwd || null,
       repoIdentity: state.repoIdentity || null,
       projectPath: state.projectPath || null,
+      branch: state.branch || null,
+      headAtCapture: state.headAtCapture || null,
       updatedAt: new Date().toISOString()
     });
   }

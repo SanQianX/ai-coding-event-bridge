@@ -5,6 +5,8 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { CrossProcessLock } = require('./lock');
 const { appendLineSync, writeJsonAtomicSync, readJsonIfExists, ensureDirSync } = require('./fs-utils');
+const { repoIdentityKey, sameRepoIdentity, isValidRepoIdentityV1, turnScopeKey } = require('./repo-context');
+const { validateAndNormalizeEvent, evidenceLevelFor, clampConfidence, raiseConfidenceToEvidence } = require('./event-schema');
 
 const EVENT_SCHEMA = 'ai-coding-event/v1';
 const BOUNDARY_SCHEMA = 'git-commit-boundary/v1';
@@ -50,7 +52,7 @@ class JournalCorruptError extends Error {
 }
 
 function turnKey(repoIdentity, turnId) {
-  return `${repoIdentity}::${turnId}`;
+  return `${turnScopeKey(repoIdentity)}::${turnId}`;
 }
 
 class Journal {
@@ -130,7 +132,7 @@ class Journal {
       sequence,
       repoIdentity,
       openTurnIdsAtCommit: [],
-      previousRepoBoundarySequence: this._state.lastBoundaryByRepo[repoIdentity] || null,
+      previousRepoBoundarySequence: this._state.lastBoundaryByRepo[repoIdentityKey(repoIdentity)] || null,
       capturedAt: new Date().toISOString()
     };
     for (const field of BOUNDARY_FACT_FIELDS) {
@@ -142,7 +144,7 @@ class Journal {
 
   _applyProjection(record) {
     const { eventType, turnId, repoIdentity, sessionId } = record;
-    if (!repoIdentity) return;
+    const scopeKey = turnScopeKey(repoIdentity);
     if (eventType === 'user_prompt' && turnId) {
       const key = turnKey(repoIdentity, turnId);
       const existing = this._state.openTurns[key];
@@ -173,7 +175,7 @@ class Journal {
     if (eventType === 'assistant_response' && !turnId && sessionId) {
       // Same rule as turn-identity: bind by session only when it is unambiguous.
       const matches = Object.values(this._state.openTurns).filter(
-        (turn) => turn.repoIdentity === repoIdentity && turn.sessionId === sessionId
+        (turn) => turnScopeKey(turn.repoIdentity) === scopeKey && turn.sessionId === sessionId
       );
       if (matches.length === 1) {
         matches[0].endSequence = record.sequence;
@@ -184,7 +186,7 @@ class Journal {
     if (eventType === 'session_end' && sessionId) {
       for (const key of Object.keys(this._state.openTurns)) {
         const turn = this._state.openTurns[key];
-        if (turn.repoIdentity === repoIdentity && turn.sessionId === sessionId) {
+        if (turnScopeKey(turn.repoIdentity) === scopeKey && turn.sessionId === sessionId) {
           turn.endSequence = record.sequence;
           delete this._state.openTurns[key];
         }
@@ -194,8 +196,9 @@ class Journal {
 
   _applyRecordToState(record) {
     if (record.schema === BOUNDARY_SCHEMA) {
-      if (record.repoIdentity) {
-        this._state.lastBoundaryByRepo[record.repoIdentity] = record.sequence;
+      const boundaryKey = repoIdentityKey(record.repoIdentity);
+      if (boundaryKey) {
+        this._state.lastBoundaryByRepo[boundaryKey] = record.sequence;
       }
     } else {
       this._applyProjection(record);
@@ -321,9 +324,73 @@ class Journal {
     });
   }
 
+  // Canonical conversation append path. Turn identity is resolved here, under
+  // the journal lock, so the durable record itself carries the canonical
+  // turnId — projection-only inference is never the source of truth.
+  //
+  //   user_prompt    : trustworthy client turnId wins, else Bridge mints
+  //                    turn_<uuid> and persists it in the record.
+  //   assistant      : client turnId wins; else bind to the single open turn
+  //                    of the SAME workspace + session; zero or several open
+  //                    candidates => stays null, confidence <= partial,
+  //                    captureStatus partial/gap (never guessed).
+  //   session_end    : closes the workspace+session open turns; no content
+  //                    is fabricated.
+  //
+  // Duplicate reprocessing of an event carrying a stable eventKey returns the
+  // already persisted record instead of minting a second turn identity.
+  async appendConversationEvent(event) {
+    return this._withJournalLock(async () => {
+      const normalized = validateAndNormalizeEvent(event);
+
+      if (normalized.eventKey !== undefined) {
+        if (typeof normalized.eventKey !== 'string' || !normalized.eventKey) {
+          throw new JournalValidationError('event.eventKey must be a non-empty string when present');
+        }
+        const { records } = this._scanFrom(0);
+        const existing = records.find(
+          (record) => record.eventKey === normalized.eventKey && record.schema === EVENT_SCHEMA
+        );
+        if (existing) {
+          return { eventId: existing.eventId, sequence: existing.sequence, turnId: existing.turnId || null, duplicate: true };
+        }
+      }
+
+      if (normalized.eventType === 'user_prompt' && !normalized.turnId) {
+        normalized.turnId = `turn_${randomUUID()}`;
+      } else if (normalized.eventType === 'assistant_response' && !normalized.turnId && normalized.sessionId) {
+        const scopeKey = turnScopeKey(normalized.repoIdentity);
+        const candidates = Object.values(this._state.openTurns).filter(
+          (turn) => turnScopeKey(turn.repoIdentity) === scopeKey && turn.sessionId === normalized.sessionId
+        );
+        if (candidates.length === 1) {
+          normalized.turnId = candidates[0].turnId;
+        } else {
+          normalized.identityConfidence = clampConfidence(normalized.identityConfidence, 'partial');
+          if (normalized.captureStatus === 'complete') normalized.captureStatus = 'partial';
+          normalized.meta = { ...(normalized.meta || {}), turnBinding: candidates.length === 0 ? 'no-open-turn' : 'ambiguous-open-turns' };
+        }
+      }
+
+      // Assignment can only raise evidence; clamp upward to the evidence level.
+      const evidence = evidenceLevelFor({ sessionId: normalized.sessionId, turnId: normalized.turnId });
+      normalized.identityConfidence = raiseConfidenceToEvidence(normalized.identityConfidence, evidence);
+
+      const sequence = this._state.lastSequence + 1;
+      const record = this._buildEventRecord(sequence, normalized);
+      if (normalized.eventKey !== undefined) record.eventKey = normalized.eventKey;
+      appendLineSync(this.eventsFile, `${JSON.stringify(record)}\n`);
+      this._applyRecordToState(record);
+      this._state.bytesFlushed = fs.statSync(this.eventsFile).size;
+      this._saveState();
+      return { eventId: record.eventId, sequence, turnId: record.turnId || null, duplicate: false };
+    });
+  }
+
   async appendCommitBoundary(repoIdentity, gitFacts = {}) {
-    if (typeof repoIdentity !== 'string' || !repoIdentity) {
-      throw new JournalValidationError('repoIdentity is required for a commit boundary');
+    const boundaryKey = repoIdentityKey(repoIdentity);
+    if (!boundaryKey || (typeof repoIdentity !== 'string' && !isValidRepoIdentityV1(repoIdentity))) {
+      throw new JournalValidationError('repoIdentity (repo-identity/v1 or legacy string) is required for a commit boundary');
     }
     if (gitFacts.commitSha !== undefined && typeof gitFacts.commitSha !== 'string') {
       throw new JournalValidationError('gitFacts.commitSha must be a string when present');
@@ -331,12 +398,12 @@ class Journal {
     return this._withJournalLock(async () => {
       const record = this._buildBoundaryRecord(this._state.lastSequence + 1, repoIdentity, gitFacts);
       record.openTurnIdsAtCommit = Object.values(this._state.openTurns)
-        .filter((turn) => turn.repoIdentity === repoIdentity)
+        .filter((turn) => sameRepoIdentity(turn.repoIdentity, repoIdentity))
         .map((turn) => turn.turnId);
       appendLineSync(this.eventsFile, `${JSON.stringify(record)}\n`);
       this._state.bytesFlushed = fs.statSync(this.eventsFile).size;
       this._state.lastSequence = record.sequence;
-      this._state.lastBoundaryByRepo[repoIdentity] = record.sequence;
+      this._state.lastBoundaryByRepo[boundaryKey] = record.sequence;
       this._saveState();
       return {
         sequence: record.sequence,
@@ -368,7 +435,7 @@ class Journal {
   async getOpenTurns(repoIdentity) {
     return this._withJournalLock(async () =>
       Object.values(this._state.openTurns)
-        .filter((turn) => !repoIdentity || turn.repoIdentity === repoIdentity)
+        .filter((turn) => !repoIdentity || sameRepoIdentity(turn.repoIdentity, repoIdentity))
         .map((turn) => ({ ...turn }))
     );
   }

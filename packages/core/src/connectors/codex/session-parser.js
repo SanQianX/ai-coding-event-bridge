@@ -4,9 +4,10 @@ const fs = require('fs');
 
 /**
  * Incremental Codex session JSONL parser. Reads only appended bytes after the
- * cursor offset, tolerates a partial trailing line, and extracts user/assistant
- * message records. Never re-reads the whole file and never selects sessions by
- * mtime — the caller identifies the session file deterministically.
+ * cursor offset, tolerates a partial trailing line, and classifies records
+ * into messages and workspace metadata. Never re-reads the whole file and
+ * never selects sessions by mtime — the caller identifies the session file
+ * deterministically.
  */
 function parseSessionChunk(filePath, fromOffset) {
   const size = fs.statSync(filePath).size;
@@ -44,6 +45,25 @@ function parseSessionChunk(filePath, fromOffset) {
   return { records, completeBytes, size };
 }
 
+/**
+ * Authoritative workspace metadata from Codex rollout records:
+ * session_meta.payload.cwd and turn_context.payload.cwd. A verified
+ * turn_context cwd may update the active workspace for subsequent events.
+ */
+function extractWorkspaceMeta(record) {
+  if (!record || typeof record !== 'object') return null;
+  const payload = record.payload && typeof record.payload === 'object' ? record.payload : null;
+  if (record.type === 'session_meta' || (payload && payload.type === 'session_meta')) {
+    const cwd = payload && typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : null;
+    return { kind: 'session_meta', cwd };
+  }
+  if (record.type === 'turn_context' || (payload && payload.type === 'turn_context')) {
+    const cwd = payload && typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : null;
+    return { kind: 'turn_context', cwd };
+  }
+  return null;
+}
+
 function extractMessage(record) {
   if (!record || typeof record !== 'object') return null;
   const payload = record.payload && typeof record.payload === 'object' ? record.payload : record;
@@ -68,4 +88,4 @@ function collectText(content) {
   return null;
 }
 
-module.exports = { parseSessionChunk, extractMessage };
+module.exports = { parseSessionChunk, extractMessage, extractWorkspaceMeta };

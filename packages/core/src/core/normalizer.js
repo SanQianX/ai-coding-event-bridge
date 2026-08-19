@@ -11,9 +11,10 @@ function assignTurnIdForPrompt() {
 
 /**
  * Claude Code hook payload -> normalized event.
- * UserPromptSubmit carries the exact user prompt; Stop carries
- * last_assistant_message when present. Stop closes the session's open turn;
- * the turn-identity layer performs that binding.
+ * UserPromptSubmit carries the exact user prompt; Stop yields an
+ * assistant_response only when last_assistant_message exists — an empty Stop
+ * is not conversation evidence and produces no event. Turn closure binding
+ * happens in the journal's canonical append path.
  */
 function normalizeClaudeCode(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -26,7 +27,7 @@ function normalizeClaudeCode(raw) {
       role: 'user',
       content,
       sessionId: raw.session_id || null,
-      turnId: assignTurnIdForPrompt(),
+      turnId: raw.turnId || assignTurnIdForPrompt(),
       repoIdentity: raw.repoIdentity,
       projectPath: raw.cwd,
       identityConfidence: content === null ? 'partial' : 'exact',
@@ -36,19 +37,20 @@ function normalizeClaudeCode(raw) {
     return validateAndNormalizeEvent(event);
   }
   if (raw.hookName === 'Stop' || raw.eventType === 'assistant_response') {
-    const content =
-      typeof raw.last_assistant_message === 'string' ? raw.last_assistant_message : null;
+    if (typeof raw.last_assistant_message !== 'string' || !raw.last_assistant_message) {
+      return null;
+    }
     return validateAndNormalizeEvent({
       ...base,
       eventType: 'assistant_response',
       role: 'assistant',
-      content,
+      content: raw.last_assistant_message,
       sessionId: raw.session_id || null,
       turnId: raw.turnId || null,
       repoIdentity: raw.repoIdentity,
       projectPath: raw.cwd,
       identityConfidence: 'partial',
-      captureStatus: content === null ? 'gap' : 'complete',
+      captureStatus: 'complete',
       rawEventType: raw.hookName || 'assistant_response'
     });
   }

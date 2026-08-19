@@ -31,12 +31,14 @@ function isManagedNotifyLine(line, shimPath) {
  * notifier (report conflict instead). Uninstall removes the entry only when it
  * is Bridge-managed.
  */
-async function installCodexNotify({ homeDir, consumerName, consumerMeta = {}, configFile, version } = {}) {
+// Registry mutations are host-owned; registerConsumer/unregisterConsumer are
+// explicit opt-ins. Uninstall never deletes the shared runtime home.
+async function installCodexNotify({ homeDir, consumerName, consumerMeta = {}, registerConsumer = false, configFile, version } = {}) {
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = configFile || path.join(os.homedir(), '.codex', 'config.toml');
   const runtime = await ensureRuntimeHome({ homeDir: home, version });
   const registry = new ConsumerRegistry(home);
-  if (consumerName) await registry.registerConsumer(consumerName, consumerMeta);
+  if (consumerName && registerConsumer) await registry.registerConsumer(consumerName, consumerMeta);
 
   const existing = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
   const lines = existing.split(/\r?\n/);
@@ -83,22 +85,23 @@ async function statusCodexNotify({ homeDir, configFile } = {}) {
   return { installed: isManagedNotifyLine(line, shimPathFor(home)), thirdParty: !isManagedNotifyLine(line, shimPathFor(home)) };
 }
 
-async function uninstallCodexNotify({ homeDir, consumerName, configFile } = {}) {
+async function uninstallCodexNotify({ homeDir, consumerName, unregisterConsumer = false, configFile } = {}) {
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = configFile || path.join(os.homedir(), '.codex', 'config.toml');
   const registry = new ConsumerRegistry(home);
-  if (consumerName) await registry.unregisterConsumer(consumerName);
-  const remaining = (await registry.getConsumers()).map(c => c.name);
-  if (remaining.length > 0) {
-    return { removed: false, remainingConsumers: remaining };
+  if (fs.existsSync(target)) {
+    const lines = fs.readFileSync(target, 'utf8').split(/\r?\n/);
+    const kept = lines.filter(line => !(isManagedNotifyLine(line, shimPathFor(home))));
+    if (kept.length !== lines.length) {
+      fs.writeFileSync(target, kept.join('\n').replace(/\n{3,}/g, '\n\n'));
+    }
   }
-  if (!fs.existsSync(target)) return { removed: true };
-  const lines = fs.readFileSync(target, 'utf8').split(/\r?\n/);
-  const kept = lines.filter(line => !(isManagedNotifyLine(line, shimPathFor(home))));
-  if (kept.length !== lines.length) {
-    fs.writeFileSync(target, kept.join('\n').replace(/\n{3,}/g, '\n\n'));
+  let consumerUnregistered = false;
+  if (consumerName && unregisterConsumer) {
+    await registry.unregisterConsumer(consumerName);
+    consumerUnregistered = true;
   }
-  return { removed: true };
+  return { removed: true, consumerUnregistered, consumers: (await registry.getConsumers()).map(c => c.name) };
 }
 
 module.exports = {

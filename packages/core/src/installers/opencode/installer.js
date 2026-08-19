@@ -41,12 +41,15 @@ module.exports = {
 `;
 }
 
-async function installOpenCodePlugin({ homeDir, consumerName, consumerMeta = {}, pluginsDir, version } = {}) {
+// Registry mutations are host-owned; registerConsumer/unregisterConsumer are
+// explicit opt-ins. Uninstall removes only the managed plugin file and never
+// touches third-party plugins or the shared runtime home.
+async function installOpenCodePlugin({ homeDir, consumerName, consumerMeta = {}, registerConsumer = false, pluginsDir, version } = {}) {
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = pluginsDir || path.join(os.homedir(), '.config', 'opencode', 'plugin');
   const runtime = await ensureRuntimeHome({ homeDir: home, version });
   const registry = new ConsumerRegistry(home);
-  if (consumerName) await registry.registerConsumer(consumerName, consumerMeta);
+  if (consumerName && registerConsumer) await registry.registerConsumer(consumerName, consumerMeta);
   fs.mkdirSync(target, { recursive: true });
   const file = path.join(target, PLUGIN_FILE_NAME);
   fs.writeFileSync(file, pluginSource(shimPathFor(home)));
@@ -72,22 +75,22 @@ async function statusOpenCodePlugin({ homeDir, pluginsDir } = {}) {
   return { installed: managed && exists, pluginFile: file, thirdPartyFiles };
 }
 
-async function uninstallOpenCodePlugin({ homeDir, consumerName, pluginsDir } = {}) {
+async function uninstallOpenCodePlugin({ homeDir, consumerName, unregisterConsumer = false, pluginsDir } = {}) {
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = pluginsDir || path.join(os.homedir(), '.config', 'opencode', 'plugin');
   const registry = new ConsumerRegistry(home);
-  if (consumerName) await registry.unregisterConsumer(consumerName);
-  const remaining = (await registry.getConsumers()).map(c => c.name);
-  if (remaining.length > 0) {
-    return { removed: false, remainingConsumers: remaining };
-  }
   const file = path.join(target, PLUGIN_FILE_NAME);
   try {
     fs.rmSync(file, { force: true });
   } catch (_) {
     // Already gone.
   }
-  return { removed: true };
+  let consumerUnregistered = false;
+  if (consumerName && unregisterConsumer) {
+    await registry.unregisterConsumer(consumerName);
+    consumerUnregistered = true;
+  }
+  return { removed: true, consumerUnregistered, consumers: (await registry.getConsumers()).map(c => c.name) };
 }
 
 module.exports = { installOpenCodePlugin, statusOpenCodePlugin, uninstallOpenCodePlugin, PLUGIN_FILE_NAME };

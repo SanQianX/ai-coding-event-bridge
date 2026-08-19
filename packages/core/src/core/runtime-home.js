@@ -61,10 +61,15 @@ function readStdin() {
 `;
 
 // The versioned runtime entry: dispatches the client payload into the
-// self-contained bridge tree materialized next to it.
+// self-contained bridge tree materialized next to it. The capture-disable
+// environment marker is honored before any connector is even loaded.
 const RUNTIME_HOOK_SOURCE = `#!/usr/bin/env node
 'use strict';
 async function main({ payload, home, argv, env }) {
+  const effectiveEnv = env || process.env;
+  if (effectiveEnv && effectiveEnv.AI_CODING_EVENT_BRIDGE_CAPTURE === '0') {
+    return { status: 'ignored', reason: 'capture-disabled' };
+  }
   if (payload && typeof payload === 'object') {
     if (payload.hookName) {
       const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');

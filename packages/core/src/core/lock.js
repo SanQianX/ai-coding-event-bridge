@@ -25,6 +25,9 @@ class CrossProcessLock {
 
   async acquire() {
     if (this._held) throw new LockError('lock already held by this handle');
+    // Materialize the lock directory on first real use so that merely
+    // constructing a registry/journal never creates a Bridge home.
+    ensureDirSync(path.dirname(this.lockFile));
     const deadline = Date.now() + this.timeoutMs;
     for (;;) {
       try {
@@ -85,9 +88,7 @@ class CrossProcessLock {
 }
 
 function lockPathFor(homeDir, name) {
-  const dir = path.join(homeDir, 'locks');
-  ensureDirSync(dir);
-  return path.join(dir, name);
+  return path.join(homeDir, 'locks', name);
 }
 
 module.exports = { CrossProcessLock, lockPathFor, LockError };

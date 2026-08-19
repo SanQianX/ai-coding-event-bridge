@@ -8,7 +8,16 @@ const { compactJournal } = require('./core/compaction');
 const { ensureRuntimeHome } = require('./core/runtime-home');
 const semver = require('./core/semver');
 const { validateAndNormalizeEvent, EventSchemaError } = require('./core/event-schema');
-const { normalizeGitUrl, resolveRepoContext } = require('./core/repo-context');
+const {
+  normalizeGitUrl,
+  resolveRepoContext,
+  REPO_IDENTITY_SCHEMA,
+  buildRepoIdentityV1,
+  isValidRepoIdentityV1,
+  repoIdentityKey,
+  sameRepoIdentity,
+  workspaceIdFor
+} = require('./core/repo-context');
 const {
   isSyntheticPrompt,
   orderBySequence,
@@ -19,6 +28,9 @@ const {
 const { normalizeClaudeCode, normalizeCodex, normalizeOpenCode } = require('./core/normalizer');
 const claudeHookEntry = require('./connectors/claude-code/hook-entry');
 const claudeInstaller = require('./installers/claude-code/installer');
+const codexInstaller = require('./installers/codex/installer');
+const openCodeInstaller = require('./installers/opencode/installer');
+const { createBridge } = require('./core/bridge');
 
 module.exports = {
   packageName: packageInfo.name,
@@ -37,6 +49,12 @@ module.exports = {
   EventSchemaError,
   normalizeGitUrl,
   resolveRepoContext,
+  REPO_IDENTITY_SCHEMA,
+  buildRepoIdentityV1,
+  isValidRepoIdentityV1,
+  repoIdentityKey,
+  sameRepoIdentity,
+  workspaceIdFor,
   isSyntheticPrompt,
   orderBySequence,
   isDuplicateEvent,
@@ -46,5 +64,11 @@ module.exports = {
   normalizeCodex,
   normalizeOpenCode,
   claudeHookEntry,
-  claudeInstaller
+  claudeInstaller,
+  createBridge,
+  installers: {
+    claudeCode: claudeInstaller,
+    codex: codexInstaller,
+    openCode: openCodeInstaller
+  }
 };

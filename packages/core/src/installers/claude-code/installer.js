@@ -91,12 +91,18 @@ function removeManagedEntries(settings, shimPath) {
   return removed;
 }
 
-async function installClaudeCodeHook({ homeDir, consumerName, consumerMeta = {}, settingsFile, version } = {}) {
+// Host-level consumer registration is owned by the host (Project-Knowledge
+// registers "project-knowledge" once via createBridge()). Connector
+// installers mutate the registry only on explicit opt-in:
+//   registerConsumer: true   -> register consumerName (legacy convenience)
+//   unregisterConsumer: true -> unregister consumerName during uninstall
+// Uninstalling a connector never deletes the shared runtime home.
+async function installClaudeCodeHook({ homeDir, consumerName, consumerMeta = {}, registerConsumer = false, settingsFile, version } = {}) {
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = settingsFile || path.join(os.homedir(), '.claude', 'settings.json');
   const runtime = await ensureRuntimeHome({ homeDir: home, version });
   const registry = new ConsumerRegistry(home);
-  if (consumerName) {
+  if (consumerName && registerConsumer) {
     await registry.registerConsumer(consumerName, consumerMeta);
   }
   const settings = readSettings(target);
@@ -138,25 +144,29 @@ async function statusClaudeCodeHook({ homeDir, settingsFile } = {}) {
   };
 }
 
-async function repairClaudeCodeHook({ homeDir, consumerName, consumerMeta = {}, settingsFile, version } = {}) {
-  return installClaudeCodeHook({ homeDir, consumerName, consumerMeta, settingsFile, version });
+async function repairClaudeCodeHook({ homeDir, consumerName, consumerMeta = {}, registerConsumer = false, settingsFile, version } = {}) {
+  return installClaudeCodeHook({ homeDir, consumerName, consumerMeta, registerConsumer, settingsFile, version });
 }
 
-async function uninstallClaudeCodeHook({ homeDir, consumerName, settingsFile } = {}) {
+async function uninstallClaudeCodeHook({ homeDir, consumerName, unregisterConsumer = false, settingsFile } = {}) {
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = settingsFile || path.join(os.homedir(), '.claude', 'settings.json');
   const registry = new ConsumerRegistry(home);
-  if (consumerName) {
-    await registry.unregisterConsumer(consumerName);
-  }
-  const remaining = (await registry.getConsumers()).map((c) => c.name);
-  if (remaining.length > 0) {
-    return { removed: false, remainingConsumers: remaining, settingsFile: target };
-  }
   const settings = readSettings(target);
   const removed = removeManagedEntries(settings, shimPathFor(home));
   writeJsonAtomicSync(target, settings);
-  return { removed: true, removedEvents: removed, settingsFile: target };
+  let consumerUnregistered = false;
+  if (consumerName && unregisterConsumer) {
+    await registry.unregisterConsumer(consumerName);
+    consumerUnregistered = true;
+  }
+  return {
+    removed: true,
+    removedEvents: removed,
+    settingsFile: target,
+    consumerUnregistered,
+    consumers: (await registry.getConsumers()).map((c) => c.name)
+  };
 }
 
 module.exports = {

@@ -4,9 +4,10 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { ensureRuntimeHome } = require('../src/core/runtime-home');
 const { Journal } = require('../src/core/journal');
+const { repoIdentityKey } = require('../src/core/repo-context');
 const hookEntry = require('../src/connectors/opencode/hook-entry');
 const {
   installOpenCodePlugin,
@@ -61,24 +62,70 @@ async function main() {
   assert.ok(!events.some(e => e.eventType !== 'user_prompt' && e.eventType !== 'assistant_response'));
   assert.ok(!JSON.stringify(events).includes('8787'), 'no legacy HTTP endpoint coupling');
   const open = await journal.getOpenTurns();
-  assert.deepStrictEqual(open.map(t => t.turnId), [], 'assistant closed its turn');
+  assert.deepStrictEqual(open.map(t => t.turnId), ['oc-t2'], 'turn with a reply is closed; the unanswered offline prompt stays open');
+
+  // Canonical turn identity without client turnIds, per-session and per-repo.
+  const repoX = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-oc-x-'));
+  const repoY = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-oc-y-'));
+  for (const dir of [repoX, repoY]) {
+    await new Promise((resolve, reject) => execFile('git', ['init', '-q'], { cwd: dir, windowsHide: true }, (e) => (e ? reject(e) : resolve())));
+  }
+  const sessA = { type: 'user', sessionId: 'oc-no-turn-a', cwd: repoX, text: 'prompt A in repo X' };
+  const sessB = { type: 'user', sessionId: 'oc-no-turn-b', cwd: repoY, text: 'prompt B in repo Y' };
+  const userA = await hookEntry.main({ home: HOME, payload: sessA });
+  const userB = await hookEntry.main({ home: HOME, payload: sessB });
+  const replyA = await hookEntry.main({ home: HOME, payload: { type: 'assistant', sessionId: 'oc-no-turn-a', cwd: repoX, text: 'reply A' } });
+  const replyB = await hookEntry.main({ home: HOME, payload: { type: 'assistant', sessionId: 'oc-no-turn-b', cwd: repoY, text: 'reply B' } });
+  assert.match(userA.turnId, /^turn_[0-9a-f-]{36}$/, 'Bridge mints the user turnId when the client supplied none');
+  assert.strictEqual(replyA.turnId, userA.turnId, 'assistant binds to its session turn');
+  assert.strictEqual(replyB.turnId, userB.turnId);
+  assert.notStrictEqual(userA.turnId, userB.turnId, 'two sessions never share a turn');
+  const turnEvents = await journal.readEvents({});
+  const eventA = turnEvents.find((e) => e.sequence === userA.sequence);
+  const eventB = turnEvents.find((e) => e.sequence === userB.sequence);
+  assert.notStrictEqual(
+    repoIdentityKey(eventA.repoIdentity),
+    repoIdentityKey(eventB.repoIdentity),
+    'two repos never cross-bind'
+  );
+
+  // Capture-disable writes nothing.
+  const beforeDisable = (await journal.readEvents({})).length;
+  const previousCapture = process.env.AI_CODING_EVENT_BRIDGE_CAPTURE;
+  process.env.AI_CODING_EVENT_BRIDGE_CAPTURE = '0';
+  try {
+    const disabled = await hookEntry.main({ home: HOME, payload: { type: 'user', sessionId: 'oc-internal', cwd: repoX, text: 'internal' } });
+    assert.deepStrictEqual(disabled, { status: 'ignored', reason: 'capture-disabled' });
+    assert.strictEqual((await journal.readEvents({})).length, beforeDisable, 'capture-disabled writes zero journal records');
+  } finally {
+    if (previousCapture === undefined) delete process.env.AI_CODING_EVENT_BRIDGE_CAPTURE;
+    else process.env.AI_CODING_EVENT_BRIDGE_CAPTURE = previousCapture;
+  }
 
   // Installer: managed plugin file, third-party files preserved on uninstall.
   const pluginsDir = path.join(HOME, 'opencode-plugins');
   fs.mkdirSync(pluginsDir, { recursive: true });
   fs.writeFileSync(path.join(pluginsDir, 'my-own-plugin.js'), '// third party\n');
-  await installOpenCodePlugin({ homeDir: HOME, consumerName: 'project-knowledge', pluginsDir, version: '0.1.0' });
+  await installOpenCodePlugin({ homeDir: HOME, consumerName: 'project-knowledge', registerConsumer: true, pluginsDir, version: '0.1.0' });
   const status = await statusOpenCodePlugin({ homeDir: HOME, pluginsDir });
   assert.strictEqual(status.installed, true);
   assert.strictEqual(status.thirdPartyFiles, 1);
   assert(fs.readFileSync(path.join(pluginsDir, PLUGIN_FILE_NAME), 'utf8').includes('bridge-hook.cjs'));
 
-  const partial = await uninstallOpenCodePlugin({ homeDir: HOME, consumerName: 'nonexistent-other', pluginsDir });
-  assert.strictEqual(partial.removed, false, 'a remaining consumer keeps the plugin');
-  const final = await uninstallOpenCodePlugin({ homeDir: HOME, consumerName: 'project-knowledge', pluginsDir });
-  assert.strictEqual(final.removed, true);
+  // Disable OpenCode capture only: plugin removed, host consumer KEPT.
+  const disableCapture = await uninstallOpenCodePlugin({ homeDir: HOME, pluginsDir });
+  assert.strictEqual(disableCapture.removed, true);
+  assert.deepStrictEqual(disableCapture.consumers, ['project-knowledge']);
   assert(!fs.existsSync(path.join(pluginsDir, PLUGIN_FILE_NAME)), 'managed plugin removed');
   assert(fs.existsSync(path.join(pluginsDir, 'my-own-plugin.js')), 'third-party plugin preserved');
+
+  // Host global disable: explicit consumer unregister after cleanup.
+  await installOpenCodePlugin({ homeDir: HOME, pluginsDir, version: '0.1.0' });
+  const final = await uninstallOpenCodePlugin({ homeDir: HOME, consumerName: 'project-knowledge', unregisterConsumer: true, pluginsDir });
+  assert.strictEqual(final.removed, true);
+  assert.strictEqual(final.consumerUnregistered, true);
+  assert.deepStrictEqual(final.consumers, []);
+  assert(fs.existsSync(path.join(HOME, 'bin', 'bridge-hook.cjs')), 'shared runtime home preserved');
 
   console.log('opencode-plugin-test PASS');
 }

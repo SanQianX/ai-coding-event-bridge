@@ -48,6 +48,7 @@ async function main() {
   const installed = await installClaudeCodeHook({
     homeDir: HOME,
     consumerName: 'project-knowledge',
+    registerConsumer: true,
     settingsFile: SETTINGS,
     version: '0.1.0'
   });
@@ -73,37 +74,35 @@ async function main() {
   await installClaudeCodeHook({
     homeDir: HOME,
     consumerName: 'devtask-radar',
+    registerConsumer: true,
     settingsFile: SETTINGS,
     version: '0.1.0'
   });
   assert.strictEqual(readSettings().hooks.UserPromptSubmit.length, 1, 'no duplicate managed groups');
   assert.strictEqual(readSettings().hooks.Stop.length, 2);
 
-  // Uninstalling one of two consumers keeps the hooks alive.
-  const partial = await uninstallClaudeCodeHook({ homeDir: HOME, consumerName: 'project-knowledge', settingsFile: SETTINGS });
-  assert.strictEqual(partial.removed, false);
-  assert.deepStrictEqual(partial.remainingConsumers, ['devtask-radar']);
-  assert.strictEqual(readSettings().hooks.UserPromptSubmit.length, 1);
-
-  // The last consumer removes managed entries but never third-party hooks.
-  const final = await uninstallClaudeCodeHook({ homeDir: HOME, consumerName: 'devtask-radar', settingsFile: SETTINGS });
-  assert.strictEqual(final.removed, true);
-  const after = readSettings();
-  assert.ok(!after.hooks.UserPromptSubmit, 'managed event removed entirely');
-  assert.strictEqual(after.hooks.Stop.length, 1);
-  assert.strictEqual(after.hooks.Stop[0].hooks[0].command, 'node /somewhere/notify-user.js');
-  assert.strictEqual(after.model, 'sonnet');
+  // Disable Claude capture only: managed hook removed, host consumer KEPT.
+  const disableCapture = await uninstallClaudeCodeHook({ homeDir: HOME, settingsFile: SETTINGS });
+  assert.strictEqual(disableCapture.removed, true);
+  assert.deepStrictEqual(disableCapture.consumers.sort(), ['devtask-radar', 'project-knowledge']);
+  const afterDisable = readSettings();
+  assert.ok(!afterDisable.hooks.UserPromptSubmit, 'managed event removed entirely');
+  assert.strictEqual(afterDisable.hooks.Stop.length, 1);
+  assert.strictEqual(afterDisable.hooks.Stop[0].hooks[0].command, 'node /somewhere/notify-user.js');
+  assert.strictEqual(afterDisable.model, 'sonnet');
 
   // Repair restores a deleted managed entry while the third-party group survives.
-  const damaged = readSettings();
-  damaged.hooks.Stop = damaged.hooks.Stop.filter(
-    (group) => !(group.hooks || []).some((hook) => hook.command && hook.command.includes(shimPath))
-  );
-  fs.writeFileSync(SETTINGS, JSON.stringify(damaged, null, 2));
-  await repairClaudeCodeHook({ homeDir: HOME, consumerName: 'project-knowledge', settingsFile: SETTINGS, version: '0.1.0' });
+  await repairClaudeCodeHook({ homeDir: HOME, consumerName: 'project-knowledge', registerConsumer: true, settingsFile: SETTINGS, version: '0.1.0' });
   const repaired = await statusClaudeCodeHook({ homeDir: HOME, settingsFile: SETTINGS });
   assert.strictEqual(repaired.installed, true, 'repair restores all managed events');
   assert.strictEqual(repaired.thirdPartyCount, 1, 'third-party hook still intact after repair');
+
+  // Host global disable: connector cleanup, then explicit consumer unregister.
+  const final = await uninstallClaudeCodeHook({ homeDir: HOME, consumerName: 'project-knowledge', unregisterConsumer: true, settingsFile: SETTINGS });
+  assert.strictEqual(final.removed, true);
+  assert.strictEqual(final.consumerUnregistered, true);
+  assert.deepStrictEqual(final.consumers, ['devtask-radar'], 'other consumers remain untouched');
+  assert.strictEqual(fs.existsSync(shimPath), true, 'shared runtime home is never removed by connector uninstall');
 
   // Corrupt user config is never overwritten.
   const beforeRaw = fs.readFileSync(SETTINGS, 'utf8');

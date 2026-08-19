@@ -40,21 +40,16 @@ async function main() {
   assert.strictEqual(noSession.sessionId, null);
   assert.strictEqual(noSession.identityConfidence, 'partial', 'a captured prompt owns its fresh turn id');
 
-  const noIdentityAtAll = normalizeClaudeCode({ hookName: 'Stop' });
-  assert.strictEqual(noIdentityAtAll.sessionId, null);
-  assert.strictEqual(noIdentityAtAll.identityConfidence, 'unavailable');
-  assert.strictEqual(noIdentityAtAll.captureStatus, 'gap');
+  // Stop without an assistant message is not conversation evidence: no event.
+  assert.strictEqual(normalizeClaudeCode({ hookName: 'Stop' }), null);
+  assert.strictEqual(normalizeClaudeCode({ hookName: 'Stop', session_id: 's1' }), null);
 
   const noPromptText = normalizeClaudeCode({ hookName: 'UserPromptSubmit', session_id: 's1' });
   assert.strictEqual(noPromptText.content, null, 'missing prompt text stays null');
   assert.strictEqual(noPromptText.captureStatus, 'partial');
   assert.ok(!JSON.stringify(noPromptText).includes('No captured user prompt'));
 
-  const noAssistantText = normalizeClaudeCode({ hookName: 'Stop', session_id: 's1' });
-  assert.strictEqual(noAssistantText.content, null);
-  assert.strictEqual(noAssistantText.captureStatus, 'gap');
-
-  const allEvents = [promptEvent, stopEvent, codexEvent, ocEvent, noSession, noPromptText, noAssistantText];
+  const allEvents = [promptEvent, stopEvent, codexEvent, ocEvent, noSession, noPromptText];
   assert.strictEqual(assertNoSyntheticEvidence(allEvents), true);
 
   assert.strictEqual(normalizeClaudeCode(null), null);

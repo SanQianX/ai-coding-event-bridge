@@ -3,6 +3,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const { Journal } = require('../core/journal');
+const { repoIdentityKey } = require('../core/repo-context');
 
 /**
  * Headless conversation query over the durable journal. This is the controlled
@@ -26,10 +27,11 @@ class ConversationQuery {
   }
 
   async listProjects() {
-    const events = (await this._events()).filter(e => this._isConversationEvent(e) && e.repoIdentity);
+    const events = (await this._events()).filter(e => this._isConversationEvent(e) && repoIdentityKey(e.repoIdentity));
     const byProject = new Map();
     for (const event of events) {
-      const entry = byProject.get(event.repoIdentity) || {
+      const key = repoIdentityKey(event.repoIdentity);
+      const entry = byProject.get(key) || {
         repoIdentity: event.repoIdentity,
         projectPath: event.projectPath || null,
         sources: new Set(),
@@ -43,7 +45,7 @@ class ConversationQuery {
         entry.lastSequence = event.sequence;
         entry.lastCapturedAt = event.capturedAt || null;
       }
-      byProject.set(event.repoIdentity, entry);
+      byProject.set(key, entry);
     }
     return [...byProject.values()]
       .map(entry => ({ ...entry, sources: [...entry.sources] }))
@@ -51,8 +53,9 @@ class ConversationQuery {
   }
 
   async listSessions({ project } = {}) {
+    const projectKey = project === undefined || project === null ? null : repoIdentityKey(project) || project;
     const events = (await this._events()).filter(
-      e => this._isConversationEvent(e) && (!project || e.repoIdentity === project) && e.sessionId
+      e => this._isConversationEvent(e) && (!projectKey || repoIdentityKey(e.repoIdentity) === projectKey) && e.sessionId
     );
     const bySession = new Map();
     for (const event of events) {
@@ -139,8 +142,9 @@ class ConversationQuery {
   }
 
   async turns({ project, date, cursor, limit = 50 } = {}) {
+    const projectKey = project === undefined || project === null ? null : repoIdentityKey(project) || project;
     const all = (await this._events()).filter(
-      e => this._isConversationEvent(e) && (!project || e.repoIdentity === project)
+      e => this._isConversationEvent(e) && (!projectKey || repoIdentityKey(e.repoIdentity) === projectKey)
     );
     let turns = this._projectTurns(all);
     if (date) turns = turns.filter(t => t.day === date);
@@ -174,8 +178,9 @@ class ConversationQuery {
 
   async searchConversations({ project, q, limit = 20 } = {}) {
     const needle = String(q || '').toLowerCase();
+    const projectKey = project === undefined || project === null ? null : repoIdentityKey(project) || project;
     const events = (await this._events()).filter(
-      e => this._isConversationEvent(e) && (!project || e.repoIdentity === project) && typeof e.content === 'string' && e.content.toLowerCase().includes(needle)
+      e => this._isConversationEvent(e) && (!projectKey || repoIdentityKey(e.repoIdentity) === projectKey) && typeof e.content === 'string' && e.content.toLowerCase().includes(needle)
     );
     return {
       matches: events

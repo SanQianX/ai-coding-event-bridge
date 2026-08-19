@@ -1,12 +1,14 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { CrossProcessLock, lockPathFor } = require('./lock');
 const { writeJsonAtomicSync, readJsonIfExists, ensureDirSync } = require('./fs-utils');
 
 class ConsumerRegistry {
   constructor(homeDir) {
-    ensureDirSync(homeDir);
+    // Pure reads on a machine without a Bridge home must not create one;
+    // the directory is materialized on the first write.
     this.homeDir = homeDir;
     this.consumersFile = path.join(homeDir, 'consumers.json');
     this.lock = new CrossProcessLock(lockPathFor(homeDir, 'install.lock'));
@@ -25,6 +27,7 @@ class ConsumerRegistry {
   }
 
   _write(state) {
+    ensureDirSync(this.homeDir);
     writeJsonAtomicSync(this.consumersFile, state);
   }
 
@@ -78,6 +81,7 @@ class ConsumerRegistry {
   }
 
   async getConsumers() {
+    if (!fs.existsSync(this.consumersFile)) return [];
     return this._withLock(async () => {
       const state = this._read();
       return state.consumers.map((c) => ({ ...c }));
@@ -85,6 +89,7 @@ class ConsumerRegistry {
   }
 
   async getMinAck() {
+    if (!fs.existsSync(this.consumersFile)) return null;
     return this._withLock(async () => {
       const state = this._read();
       if (state.consumers.length === 0) return null;
