@@ -17,6 +17,12 @@ function sessionFile(id) {
   return path.join(SESSIONS, `rollout-2026-08-18-${id}.jsonl`);
 }
 
+function continuationFile(id, suffix, day = '19') {
+  const dir = path.join(HOME, 'fixtures', 'codex-sessions', '2026', '08', day);
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `rollout-2026-08-${day}T00-00-00-${id}_${suffix}.jsonl`);
+}
+
 function sessionMetaLine(cwd) {
   return JSON.stringify({ timestamp: new Date().toISOString(), type: 'session_meta', payload: { cwd } });
 }
@@ -26,11 +32,11 @@ function turnContextLine(cwd) {
 }
 
 function userLine(text, turn) {
-  return JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', turn_id: turn, content: [{ type: 'input_text', text }] } });
+  return JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', internal_chat_message_metadata_passthrough: { turn_id: turn }, content: [{ type: 'input_text', text }] } });
 }
 
-function assistantLine(text, turn) {
-  return JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'assistant', turn_id: turn, content: [{ type: 'output_text', text }] } });
+function assistantLine(text, turn, phase = 'final_answer') {
+  return JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'assistant', phase, internal_chat_message_metadata_passthrough: { turn_id: turn }, content: [{ type: 'output_text', text }] } });
 }
 
 function gitInit(dir) {
@@ -84,6 +90,51 @@ async function main() {
   const r6 = await codex.main({ home: HOME, payload: { session_id: 'aaa111' } });
   assert.strictEqual(r6.captured, 0);
 
+  // Codex can continue one task into multiple rollout files. v0.1.1 pinned
+  // the cursor to the first file forever; v2 migrates that exact offset and
+  // consumes every continuation in deterministic path order without replay.
+  const multiId = 'multi777';
+  const multiFirst = sessionFile(multiId);
+  fs.writeFileSync(multiFirst, sessionMetaLine(ccs) + '\n' + userLine('first rollout prompt', 'turn-m1') + '\n' + assistantLine('first rollout reply', 'turn-m1') + '\n');
+  const firstCapture = await codex.main({ home: HOME, payload: { session_id: multiId } });
+  assert.strictEqual(firstCapture.captured, 2);
+  const cursorPath = path.join(HOME, 'cursors', 'codex', `${multiId}.json`);
+  const v2BeforeMigration = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
+  const firstState = Object.values(v2BeforeMigration.files)[0];
+  fs.writeFileSync(cursorPath, JSON.stringify({
+    sessionId: multiId,
+    filePath: firstState.filePath,
+    byteOffset: firstState.byteOffset,
+    lastRecordKey: firstState.lastRecordKey,
+    activeCwd: firstState.activeCwd,
+    repoIdentity: firstState.repoIdentity,
+    projectPath: firstState.projectPath,
+    branch: firstState.branch,
+    headAtCapture: firstState.headAtCapture,
+  }));
+  const multiSecond = continuationFile(multiId, 'continuation-a', '19');
+  const multiThird = continuationFile(multiId, 'continuation-b', '20');
+  fs.writeFileSync(multiSecond, sessionMetaLine(ccs) + '\n' + userLine('second rollout prompt', 'turn-m2') + '\n' + assistantLine('working on continuation', 'turn-m2', 'commentary') + '\n');
+  fs.writeFileSync(multiThird, sessionMetaLine(ccs) + '\n' + assistantLine('continuation complete', 'turn-m2') + '\n');
+  const migrated = await codex.main({ home: HOME, payload: { session_id: multiId } });
+  assert.strictEqual(migrated.captured, 3, 'only the two new rollout files are recovered');
+  assert.strictEqual(migrated.files, 3);
+  const v2AfterMigration = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
+  assert.strictEqual(v2AfterMigration.schema, 'codex-cursor/v2');
+  assert.strictEqual(Object.keys(v2AfterMigration.files).length, 3, 'every rollout owns an independent cursor');
+  const afterMigrationAgain = await codex.main({ home: HOME, payload: { session_id: multiId } });
+  assert.strictEqual(afterMigrationAgain.captured, 0, 'repeated notify does not replay any rollout');
+
+  // Concurrent wake-ups serialize the cursor update; stable event keys are a
+  // second idempotency boundary if a process retries after journal append.
+  const concurrentId = 'race888';
+  fs.writeFileSync(sessionFile(concurrentId), sessionMetaLine(ccs) + '\n' + userLine('capture once under concurrent notify', 'turn-r1') + '\n');
+  const concurrent = await Promise.all([
+    codex.main({ home: HOME, payload: { session_id: concurrentId } }),
+    codex.main({ home: HOME, payload: { session_id: concurrentId } }),
+  ]);
+  assert.deepStrictEqual(concurrent.map(result => result.captured).sort(), [0, 1]);
+
   // turn_context cwd change: subsequent events switch workspace, prior stay.
   const fileC = sessionFile('ccc333');
   fs.writeFileSync(fileC, sessionMetaLine(ccs) + '\n' + userLine('start in ccs', 'turn-c1') + '\n');
@@ -133,6 +184,9 @@ async function main() {
       'aaa111:fix the parser in widgets',
       'bbb222:unrelated radar task',
       'aaa111:partial line that never finished',
+      'multi777:first rollout prompt',
+      'multi777:second rollout prompt',
+      'race888:capture once under concurrent notify',
       'ccc333:start in ccs',
       'ccc333:moved to ccb',
       'ddd444:no cwd metadata at all'
@@ -164,6 +218,22 @@ async function main() {
   // User + assistant share the durable turn via canonical append.
   const pairA = sessionA.filter(e => e.turnId === 'turn-a1');
   assert.strictEqual(pairA.length, 2, 'client turn ids preserved durably');
+
+  const multiEvents = events.filter(e => e.sessionId === multiId);
+  assert.deepStrictEqual(
+    multiEvents.map(event => event.content),
+    ['first rollout prompt', 'first rollout reply', 'second rollout prompt', 'working on continuation', 'continuation complete'],
+    'all rollout files are projected once in chronological order'
+  );
+  assert.ok(multiEvents.every(event => event.repoIdentity.workspaceId === ccsIdentity.workspaceId));
+  assert.strictEqual(multiEvents[2].turnId, 'turn-m2', 'real nested Codex turn identity is preserved');
+  assert.strictEqual(multiEvents[3].turnId, 'turn-m2');
+  assert.strictEqual(multiEvents[4].turnId, 'turn-m2');
+  assert.strictEqual(multiEvents[3].meta.phase, 'commentary', 'assistant phase survives for downstream projection');
+  assert.strictEqual(multiEvents[4].meta.phase, 'final_answer');
+
+  const concurrentEvents = events.filter(e => e.sessionId === concurrentId);
+  assert.strictEqual(concurrentEvents.length, 1, 'concurrent notification writes one durable event');
 
   console.log('codex-capture-test PASS');
 }

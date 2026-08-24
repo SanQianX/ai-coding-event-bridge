@@ -11,7 +11,7 @@ const fs = require('fs');
  */
 function parseSessionChunk(filePath, fromOffset) {
   const size = fs.statSync(filePath).size;
-  if (size <= fromOffset) return { records: [], completeBytes: 0, size };
+  if (size <= fromOffset) return { records: [], recordOffsets: [], completeBytes: 0, size };
   const fd = fs.openSync(filePath, 'r');
   let raw;
   try {
@@ -22,6 +22,7 @@ function parseSessionChunk(filePath, fromOffset) {
     fs.closeSync(fd);
   }
   const records = [];
+  const recordOffsets = [];
   let completeBytes = 0;
   const chunks = raw.split('\n');
   for (let i = 0; i < chunks.length; i++) {
@@ -39,10 +40,11 @@ function parseSessionChunk(filePath, fromOffset) {
     }
     if (parsed && typeof parsed === 'object') {
       records.push(parsed);
+      recordOffsets.push(fromOffset + completeBytes);
     }
     completeBytes += Buffer.byteLength(line, 'utf8') + 1;
   }
-  return { records, completeBytes, size };
+  return { records, recordOffsets, completeBytes, size };
 }
 
 /**
@@ -71,7 +73,14 @@ function extractMessage(record) {
   if (role !== 'user' && role !== 'assistant') return null;
   const text = collectText(payload.content !== undefined ? payload.content : record.content);
   if (text === null) return null;
-  return { role, text, turnId: payload.turn_id || record.turn_id || null };
+  const passthrough = payload.internal_chat_message_metadata_passthrough;
+  const nestedTurnId = passthrough && typeof passthrough === 'object' ? passthrough.turn_id : null;
+  return {
+    role,
+    text,
+    turnId: payload.turn_id || nestedTurnId || record.turn_id || null,
+    phase: typeof payload.phase === 'string' && payload.phase ? payload.phase : null
+  };
 }
 
 function collectText(content) {

@@ -1,6 +1,6 @@
 {
   "name": "@sanqianx/ai-coding-event-bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Durable AI coding event capture bridge core: connectors, normalizer, journal, commit boundaries, consumer cursors and headless conversation query.",
   "license": "MIT",
   "private": false,
