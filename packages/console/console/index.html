@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-coding-event-bridge · 会话浏览器</title>
+<style>
+  /* 设计 token 与 vector-hub 控制台一致（ZCode 风格灰阶四层 + 单一蓝 + 语义红绿） */
+  :root {
+    --bg-side: #1b1c1f;
+    --bg-main: #212226;
+    --bg-card: #2a2b30;
+    --bg-input: #333439;
+    --bg-hover: #303237;
+    --bg-active: #36383e;
+    --line: #3a3b40;
+    --text: #e8e8ea;
+    --text-2: #a0a1a5;
+    --text-3: #6b6c70;
+    --label: #8a8b90;
+    --blue: #3b82f6;
+    --green: #34d399;
+    --red: #e5695e;
+    --mono: Consolas, "Microsoft YaHei", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; transition: background-color .12s ease, color .12s ease, border-color .12s ease, opacity .12s ease; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg-main); color: var(--text);
+    font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    overflow: hidden; display: flex; flex-direction: column;
+    color-scheme: dark;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #45464b; border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  .svg-i { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+  *:focus-visible { outline: 1px solid var(--blue); outline-offset: 1px; border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  #app { flex: 1; display: flex; min-height: 0; }
+  aside { width: 248px; min-width: 248px; background: var(--bg-side); display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
+  .brand .mark { width: 22px; height: 22px; border-radius: 6px; background: var(--text); color: #16171a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
+  .brand .name { font-size: 13px; font-weight: 600; }
+  .brand .name em { font-style: normal; color: var(--text-3); font-weight: 400; }
+
+  .side-scroll { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+  .proj-filter { display: flex; align-items: center; gap: 6px; height: 28px; background: var(--bg-input); border-radius: 7px; padding: 0 8px; color: var(--text-3); margin: 2px 0 4px; }
+  .proj-filter input { flex: 1; border: none; background: none; outline: none; color: var(--text); font-size: 12px; min-width: 0; }
+  .proj-filter input::placeholder { color: var(--text-3); }
+
+  .group-label { font-size: 11px; color: var(--label); letter-spacing: .05em; padding: 8px 8px 6px; display: flex; align-items: center; gap: 6px; }
+  .group-label .sel { color: var(--text-3); font-family: var(--mono); font-weight: 400; }
+  .group-label .grow { flex: 1; }
+
+  /* 项目条目：单选浏览；注册项目悬停出现注销按钮 */
+  .proj { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; color: var(--text-2); cursor: pointer; user-select: none; }
+  .proj:hover { background: var(--bg-hover); color: var(--text); }
+  .proj.on { background: var(--bg-active); color: var(--text); }
+  .proj .cb { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #16171a; }
+  .proj.on .cb { background: var(--text); border-color: var(--text); }
+  .proj .cb .svg-i { display: none; }
+  .proj.on .cb .svg-i { display: block; }
+  .proj .pn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+  .proj .auto-tag { font-size: 10px; font-family: var(--mono); color: var(--text-3); border: 1px solid var(--line); border-radius: 99px; padding: 0 5px; flex-shrink: 0; }
+  .proj .cnt { font-size: 11px; font-family: var(--mono); color: var(--text-3); flex-shrink: 0; }
+  .proj .del { opacity: 0; width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--text-3); flex-shrink: 0; }
+  .proj:hover .del { opacity: 1; }
+  .proj .del:hover { color: var(--red); background: rgba(229,105,94,.1); }
+
+  .import-row { margin-top: 6px; height: 32px; border: 1px dashed var(--line); border-radius: 6px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-3); font-size: 12px; cursor: pointer; width: 100%; }
+  .import-row:hover { color: var(--text); border-color: var(--text-3); }
+
+  .side-foot { padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+  .side-foot .dot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); flex-shrink: 0; }
+  .side-foot .dot.off { background: var(--text-2); }
+  .side-foot .st { font-size: 11px; color: var(--text-3); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; }
+  .topbar h1 { font-size: 14px; font-weight: 600; }
+  .topbar .sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar .grow { flex: 1; }
+  .icon-btn { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); flex-shrink: 0; }
+  .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+  .date-zone { padding: 0 20px; }
+  .date-row { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; }
+  .date-box { flex: 1; height: 34px; display: flex; align-items: center; gap: 8px; background: var(--bg-input); border-radius: 10px; padding: 0 12px; color: var(--text-3); }
+  .date-box:focus-within { outline: 1px solid var(--blue); }
+  .date-box input { flex: 1; border: none; background: none; outline: none; color: var(--text); font: inherit; font-family: var(--mono); font-size: 12.5px; min-width: 0; }
+  .cta { height: 34px; padding: 0 18px; border-radius: 10px; background: var(--text); color: #16171a; font-weight: 600; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .cta:hover { background: #fff; }
+  .cta:disabled { opacity: .45; cursor: not-allowed; }
+
+  .chips-row { max-width: 860px; margin: 8px auto 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 22px; }
+  .fchip { height: 22px; padding: 0 10px; border-radius: 99px; font-size: 11px; background: var(--bg-card); color: var(--text-2); border: 1px solid transparent; }
+  .fchip:hover { color: var(--text); }
+  .fchip.on { color: var(--text); border-color: var(--line); background: var(--bg-input); font-weight: 600; }
+
+  .results-wrap { flex: 1; overflow-y: auto; padding: 12px 20px 24px; }
+  .results { max-width: 860px; margin: 0 auto; }
+  .res-meta { font-size: 11px; color: var(--text-3); font-family: var(--mono); padding: 2px 2px 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+
+  /* 轮次卡片 */
+  .turn { border-radius: 8px; background: var(--bg-card); padding: 10px 12px; margin-bottom: 6px; }
+  .turn .r1 { display: flex; align-items: center; gap: 8px; }
+  .t-badge { font-size: 11px; padding: 1px 8px; border-radius: 99px; flex-shrink: 0; color: var(--text-2); border: 1px solid var(--line); font-weight: 500; }
+  .turn .tm { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-3); flex-shrink: 0; }
+  .turn .uq { font-size: 13px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
+  .turn .as { background: var(--bg-input); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--text-2); line-height: 1.65; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+  .turn .cm { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 11px; font-family: var(--mono); color: var(--text-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .turn .cm .ok { color: var(--green); }
+  .turn .cm .multi { color: var(--blue); }
+  .turn .cm .sha { color: var(--text-2); }
+
+  .sentinel { text-align: center; font-size: 11px; color: var(--text-3); padding: 12px 0; cursor: pointer; font-family: var(--mono); }
+  .sentinel:hover { color: var(--text-2); }
+
+  .empty { max-width: 860px; margin: 40px auto 0; text-align: center; }
+  .empty .box { border: 1px dashed var(--line); border-radius: 10px; padding: 28px 24px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .empty .tile { width: 36px; height: 36px; border-radius: 9px; background: var(--bg-card); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+  .empty .t1 { font-size: 13px; }
+  .empty .t2 { font-size: 11px; color: var(--text-3); }
+
+  /* 导入项目弹窗 */
+  .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; align-items: center; justify-content: center; }
+  .modal-mask.open { display: flex; }
+  .modal { width: min(520px,92vw); max-height: calc(100vh - 80px); overflow-y: auto; border-radius: 14px; background: var(--bg-card); border: 1px solid var(--line); padding: 20px; }
+  .modal h3 { font-size: 14px; font-weight: 600; }
+  .modal .sub { font-size: 12px; color: var(--text-3); margin: 2px 0 14px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
+  .field .fin { width: 100%; height: 32px; padding: 0 10px; font: inherit; font-family: var(--mono); font-size: 12px; background: var(--bg-input); border: none; border-radius: 8px; color: var(--text); }
+  .field .fin:focus { outline: 1px solid var(--blue); }
+  .field .note { font-size: 11px; color: var(--text-3); margin-top: 4px; line-height: 1.6; }
+  .field .note .mono { font-family: var(--mono); }
+  .input-with-btn { display: flex; gap: 6px; }
+  .input-with-btn .fin { flex: 1; min-width: 0; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .btn-sec { height: 30px; padding: 0 14px; border-radius: 8px; background: var(--bg-input); color: var(--text-2); font-size: 12.5px; flex-shrink: 0; }
+  .btn-sec:hover { color: var(--text); }
+  .btn-sec:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-pri { height: 30px; padding: 0 16px; border-radius: 8px; background: var(--text); color: #16171a; font-size: 12.5px; font-weight: 600; }
+  .btn-pri:hover { background: #fff; }
+  .btn-pri:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* toast */
+  #toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center; }
+  .toast { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 8px; font-size: 12.5px; background: var(--bg-card); border: 1px solid var(--line); color: var(--text-2); animation: t-in .14s ease; max-width: 80vw; }
+  .toast.out { animation: t-out .16s ease forwards; }
+  .toast .ok-ic { color: var(--green); flex-shrink: 0; }
+  .toast .bad-ic { color: var(--red); flex-shrink: 0; }
+  @keyframes t-in { from { opacity: 0; transform: translateY(6px); } }
+  @keyframes t-out { to { opacity: 0; transform: translateY(4px); } }
+
+  /* 设置弹窗 */
+  .set-section { font-size: 11px; color: var(--label); letter-spacing: .05em; border-top: 1px solid var(--line); padding-top: 12px; margin: 4px 0 10px; }
+  .modal .set-section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .agent-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .agent-row .an { font-size: 13px; font-weight: 500; min-width: 96px; }
+  .agent-row .note { font-size: 11px; color: var(--text-3); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-chip { font-size: 11px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--text-2); flex-shrink: 0; }
+  .st-chip.ok { color: var(--green); border-color: rgba(52,211,153,.35); }
+  .st-chip.warn { color: var(--red); border-color: rgba(229,105,94,.35); }
+  .st-chip.off { color: var(--text-3); }
+  .kv-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12.5px; color: var(--text-2); }
+  .kv-row .k { min-width: 96px; color: var(--text-3); font-size: 12px; }
+  .kv-row .v { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv-row .grow { flex: 1; }
+  .btn-upg { height: 26px; padding: 0 12px; border-radius: 7px; background: var(--text); color: #16171a; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .btn-upg:hover { background: #fff; }
+  .btn-upg:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <aside>
+    <div class="brand">
+      <div class="mark">B</div>
+      <div class="name">event-bridge <em>会话浏览器</em></div>
+    </div>
+    <div class="side-scroll">
+      <div class="group-label">
+        <span>项目</span><span class="sel" id="proj-count"></span>
+        <span class="grow"></span>
+      </div>
+      <div class="proj-filter">
+        <span class="svg-i" data-i="search"></span>
+        <input id="proj-q" placeholder="过滤项目…">
+      </div>
+      <div id="proj-list"></div>
+      <div id="import-zone">
+        <button class="import-row" id="import-btn">
+          <span class="svg-i" data-i="plus"></span>导入项目
+        </button>
+      </div>
+    </div>
+    <div class="side-foot">
+      <span class="dot" id="foot-dot"></span>
+      <span class="st" id="foot-st">连接中…</span>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <h1 id="main-title">会话浏览器</h1>
+      <span class="sub" id="top-sub"></span>
+      <div class="grow"></div>
+      <button class="icon-btn" id="settings-btn" title="设置：本机 AI 工具与 Bridge 运行时">
+        <span class="svg-i" data-i="gear"></span>
+      </button>
+    </div>
+
+    <div class="date-zone">
+      <div class="date-row">
+        <div class="date-box">
+          <span class="svg-i" data-i="calendar"></span>
+          <input id="date-input" type="date">
+        </div>
+        <button class="cta" id="today-btn">今天</button>
+      </div>
+      <div class="chips-row" id="date-chips"></div>
+    </div>
+
+    <div class="results-wrap">
+      <div class="results">
+        <div class="res-meta" id="res-meta"></div>
+        <div id="turn-list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 导入项目弹窗 -->
+<div class="modal-mask" id="import-modal">
+  <div class="modal">
+    <h3>导入项目</h3>
+    <div class="sub">选择本地项目文件夹（Git 仓库），并指定该项目的对话记录保存地址</div>
+
+    <div class="field">
+      <label>项目文件夹</label>
+      <div class="input-with-btn">
+        <input class="fin" id="imp-path" placeholder="例如 D:\SanQian.Xu\my-project" spellcheck="false">
+        <button class="btn-sec" id="imp-path-browse">浏览…</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>对话记录保存地址</label>
+      <div class="input-with-btn">
+        <input class="fin" id="imp-store" placeholder="留空使用默认地址" spellcheck="false">
+        <button class="btn-sec" id="imp-store-browse">浏览…</button>
+      </div>
+      <div class="note">导入后，该项目里 Claude Code / Codex / OpenCode 的对话与提交边界会持久化到该地址；
+        留空则使用默认 <span class="mono">&lt;bridge home&gt;/projects/&lt;项目名&gt;</span>。已捕获的历史记录仍留在全局 journal，会一并显示。</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-sec" id="imp-cancel">取消</button>
+      <button class="btn-pri" id="imp-ok">导入</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<!-- 设置弹窗 -->
+<div class="modal-mask" id="settings-modal">
+  <div class="modal">
+    <h3>设置</h3>
+    <div class="sub">本机 AI 编程工具检测与 Bridge 运行时状态</div>
+    <div id="settings-body"><div class="t2" style="color:var(--text-3);font-size:12px">加载中…</div></div>
+    <div class="modal-actions">
+      <button class="btn-sec" id="settings-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+var ICONS = {
+  search: '<svg class="svg-i" width="12" height="12" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',
+  calendar: '<svg class="svg-i" width="15" height="15" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>',
+  check: '<svg class="svg-i" width="10" height="10" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>',
+  inbox: '<svg class="svg-i" width="17" height="17" viewBox="0 0 24 24"><path d="M3 13h5l1 3h6l1-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/></svg>',
+  plus: '<svg class="svg-i" width="13" height="13" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  gear: '<svg class="svg-i" width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  x: '<svg class="svg-i" width="12" height="12" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  ok: '<svg class="svg-i" width="14" height="14" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>',
+  bad: '<svg class="svg-i" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16v.5"/></svg>'
+};
+document.querySelectorAll('.svg-i[data-i]').forEach(function (el) {
+  el.outerHTML = ICONS[el.getAttribute('data-i')] || '';
+});
+
+/* ---------- 基础工具 ---------- */
+
+function escapeText(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function escapeAttr(value) {
+  return escapeText(value).replace(/"/g, '&quot;');
+}
+
+function toast(ok, text) {
+  var el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = (ok ? '<span class="ok-ic">' + ICONS.ok + '</span>' : '<span class="bad-ic">' + ICONS.bad + '</span>')
+    + '<span>' + escapeText(text) + '</span>';
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(function () {
+    el.classList.add('out');
+    setTimeout(function () { el.remove(); }, 200);
+  }, 3200);
+}
+
+function api(path, options) {
+  return fetch(path, options).then(function (res) {
+    return res.text().then(function (body) {
+      var payload = null;
+      try { payload = body ? JSON.parse(body) : null; } catch (_) { payload = null; }
+      if (!res.ok) {
+        var message = payload && payload.error && payload.error.message || ('HTTP ' + res.status);
+        var err = new Error(message);
+        err.status = res.status;
+        err.code = payload && payload.error && payload.error.code;
+        throw err;
+      }
+      return payload;
+    });
+  });
+}
+
+function todayStr(offsetDays) {
+  var d = new Date();
+  if (offsetDays) d.setDate(d.getDate() + offsetDays);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function timeOf(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+var SOURCE_LABELS = { 'claude-code': 'Claude', claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' };
+
+/* 提交注解 → 卡片标签（与 ui 包 mapCommitAnnotation 同规则） */
+function commitAnnotation(annotation) {
+  var shas = (annotation && Array.isArray(annotation.commitShas) ? annotation.commitShas : [])
+    .filter(function (sha) { return typeof sha === 'string' && /^[0-9a-f]{7,40}$/i.test(sha); })
+    .map(function (sha) { return sha.slice(0, 7); });
+  if (!shas.length) return { label: '未提交', cls: '', shas: [] };
+  if (shas.length === 1) return { label: '已提交', cls: 'ok', shas: shas };
+  return { label: '关联提交', cls: 'multi', shas: shas };
+}
+
+/* ---------- 状态 ---------- */
+
+var state = {
+  projects: [],
+  project: null,      // 当前选中项目对象
+  dates: [],
+  date: null,
+  turns: [],
+  annotations: {},
+  cursor: null,
+  totalTurns: 0,
+  loadingTurns: false,
+  filter: ''
+};
+
+/* ---------- 渲染 ---------- */
+
+function visibleProjects() {
+  var q = state.filter.trim().toLowerCase();
+  return state.projects.filter(function (p) {
+    return !q || p.name.toLowerCase().indexOf(q) >= 0 || (p.path || '').toLowerCase().indexOf(q) >= 0;
+  });
+}
+
+function renderSidebar() {
+  var list = visibleProjects();
+  document.getElementById('proj-count').textContent = list.length ? '· ' + list.length : '';
+  document.getElementById('proj-list').innerHTML = list.map(function (p) {
+    var on = state.project && p.id === state.project.id;
+    var title = (p.path || p.id) + (p.auto ? '\n（自动发现：未导入，记录在全局 journal）' : '\n记录保存于 ' + p.store);
+    return '<div class="proj' + (on ? ' on' : '') + '" data-proj="' + escapeAttr(p.id) + '" data-auto="' + (p.auto ? '1' : '') + '" title="' + escapeAttr(title) + '">'
+      + '<span class="cb">' + ICONS.check + '</span>'
+      + '<span class="pn">' + escapeText(p.name) + '</span>'
+      + (p.auto ? '<span class="auto-tag">auto</span>' : '')
+      + '<span class="cnt">' + (p.turns || 0) + '</span>'
+      + (p.auto ? '' : '<button class="del" data-del="' + escapeAttr(p.id) + '" title="注销该项目（磁盘数据保留）">' + ICONS.x + '</button>')
+      + '</div>';
+  }).join('');
+}
+
+function renderChips() {
+  var chips = state.dates.slice(0, 6).map(function (entry) {
+    var label = entry.date.slice(5).replace('-', '/');
+    if (entry.date === todayStr(0)) label = '今天';
+    else if (entry.date === todayStr(-1)) label = '昨天';
+    return '<button class="fchip' + (state.date === entry.date ? ' on' : '') + '" data-date="' + escapeAttr(entry.date) + '">'
+      + escapeText(label) + ' <span style="font-family:var(--mono)">' + entry.turns + '</span></button>';
+  });
+  document.getElementById('date-chips').innerHTML = chips.join('');
+}
+
+function renderTurnCard(turn) {
+  var userEvent = turn.userEvents && turn.userEvents[0];
+  var userText = userEvent ? (userEvent.content || '') : '';
+  var time = timeOf(userEvent && userEvent.capturedAt);
+  var assistant = (turn.assistantEvents || []).map(function (event) {
+    return '<div class="as">' + escapeText(event.content === undefined || event.content === null ? '' : event.content) + '</div>';
+  }).join('');
+  var commit = commitAnnotation(state.annotations[turn.turnId]);
+  var shas = commit.shas.map(function (s) { return '<span class="sha">' + escapeText(s) + '</span>'; }).join('');
+  var source = SOURCE_LABELS[turn.source] || turn.source || '';
+  return '<article class="turn" data-turn-card data-source="' + escapeAttr(turn.source || '') + '">'
+    + '<div class="r1"><span class="t-badge">' + escapeText(source) + '</span>'
+    + '<span class="tm">' + escapeText(time) + '</span></div>'
+    + '<div class="uq">' + escapeText(userText) + '</div>'
+    + assistant
+    + '<div class="cm"><span class="' + commit.cls + '">' + escapeText(commit.label) + '</span>' + (shas ? '<span>' + shas + '</span>' : '') + '</div>'
+    + '</article>';
+}
+
+function renderTurnList() {
+  var el = document.getElementById('turn-list');
+  if (state.loadingTurns && !state.turns.length) {
+    el.innerHTML = '<div class="empty"><div class="t2">加载中…</div></div>';
+    return;
+  }
+  var html = state.turns.map(renderTurnCard).join('');
+  if (state.cursor) {
+    html += '<div class="sentinel">继续滚动或点击加载更多</div>';
+  }
+  if (!state.turns.length) {
+    html = '<div class="empty"><div class="box"><div class="tile">' + ICONS.inbox + '</div>'
+      + '<div class="t1">这一天没有开发对话</div>'
+      + '<div class="t2">换个日期，或切换左侧项目</div>'
+      + '</div></div>';
+  }
+  el.innerHTML = html;
+  observeSentinel();
+}
+
+function renderMeta() {
+  var bySource = {};
+  state.turns.forEach(function (t) { bySource[t.source] = (bySource[t.source] || 0) + 1; });
+  var parts = [state.date || '全部日期', state.turns.length + (state.totalTurns > state.turns.length ? ' / ' + state.totalTurns : '') + ' 轮'];
+  Object.keys(bySource).sort().forEach(function (s) { parts.push((SOURCE_LABELS[s] || s) + ' ' + bySource[s]); });
+  document.getElementById('res-meta').textContent = parts.join(' · ');
+}
+
+function renderTopbar() {
+  var project = state.project;
+  document.getElementById('main-title').textContent = project ? project.name : '会话浏览器';
+  document.getElementById('top-sub').textContent = project
+    ? (project.auto ? '自动发现 · 记录在全局 journal' : '记录保存于 ' + project.store)
+    : '';
+  document.getElementById('date-input').value = state.date || '';
+}
+
+function renderAll() { renderSidebar(); renderChips(); renderTopbar(); renderMeta(); renderTurnList(); }
+
+/* ---------- 数据加载 ---------- */
+
+function observeSentinel() {
+  var sentinel = document.querySelector('.sentinel');
+  if (sentinel && typeof IntersectionObserver === 'function') {
+    var io = new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) {
+        io.disconnect();
+        loadMoreTurns();
+      }
+    });
+    io.observe(sentinel);
+  }
+}
+
+function loadMoreTurns() {
+  if (!state.project || !state.cursor || state.loadingTurns) return;
+  fetchTurns({ append: true });
+}
+
+function fetchTurns(options) {
+  var append = options && options.append;
+  state.loadingTurns = true;
+  if (!append) { state.turns = []; state.annotations = {}; state.cursor = null; }
+  renderTurnList();
+  var query = '/api/turns?project=' + encodeURIComponent(state.project.id)
+    + (state.date ? '&date=' + encodeURIComponent(state.date) : '')
+    + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
+  return api(query).then(function (payload) {
+    if (!state.project || payload.project !== state.project.id) return; // 切换已发生，丢弃过期响应
+    state.turns = state.turns.concat(payload.turns || []);
+    Object.assign(state.annotations, payload.annotations || {});
+    state.cursor = payload.nextCursor || null;
+    state.totalTurns = payload.totalTurns || state.turns.length;
+    state.loadingTurns = false;
+    renderMeta();
+    renderTurnList();
+  }).catch(function (err) {
+    state.loadingTurns = false;
+    renderTurnList();
+    toast(false, '加载对话失败：' + err.message);
+  });
+}
+
+function selectProject(id, options) {
+  var project = state.projects.find(function (p) { return p.id === id; });
+  if (!project) return;
+  state.project = project;
+  state.date = null;
+  state.turns = [];
+  document.getElementById('date-chips').innerHTML = '';
+  renderTopbar();
+  renderSidebar();
+  api('/api/dates?project=' + encodeURIComponent(id)).then(function (payload) {
+    if (!state.project || state.project.id !== id) return;
+    state.dates = payload.dates || [];
+    state.date = (state.dates[0] && state.dates[0].date) || todayStr(0);
+    renderChips();
+    renderTopbar();
+    if (!(options && options.keepTurns)) fetchTurns();
+  }).catch(function (err) {
+    toast(false, '加载日期失败：' + err.message);
+  });
+}
+
+function loadProjects(options) {
+  return api('/api/projects').then(function (payload) {
+    state.projects = payload.projects || [];
+    renderSidebar();
+    var currentStillExists = state.project && state.projects.some(function (p) { return p.id === state.project.id; });
+    if (!currentStillExists) {
+      if (state.projects.length) {
+        selectProject(state.projects[0].id, options);
+      } else {
+        state.project = null;
+        state.turns = [];
+        renderTopbar();
+        renderMeta();
+        renderTurnList();
+      }
+    } else if (options && options.refreshSelected) {
+      selectProject(state.project.id, { keepTurns: false });
+    }
+  }).catch(function (err) {
+    toast(false, '加载项目失败：' + err.message);
+  });
+}
+
+function loadHealth() {
+  api('/api/health').then(function (payload) {
+    document.getElementById('foot-dot').classList.remove('off');
+    document.getElementById('foot-st').textContent =
+      'journal · seq ' + payload.lastSequence + ' · ' + payload.registeredProjects + ' 个已导入项目';
+  }).catch(function () {
+    document.getElementById('foot-dot').classList.add('off');
+    document.getElementById('foot-st').textContent = 'bridge home 不可用';
+  });
+}
+
+/* ---------- 导入项目 ---------- */
+
+var importModal = document.getElementById('import-modal');
+var impPath = document.getElementById('imp-path');
+var impStore = document.getElementById('imp-store');
+var impOk = document.getElementById('imp-ok');
+var impPathBrowse = document.getElementById('imp-path-browse');
+var impStoreBrowse = document.getElementById('imp-store-browse');
+var pickSupported = true;
+
+function openImport() {
+  impPath.value = '';
+  impStore.value = '';
+  importModal.classList.add('open');
+  impPath.focus();
+}
+function closeImport() { importModal.classList.remove('open'); }
+
+document.getElementById('import-btn').addEventListener('click', openImport);
+document.getElementById('imp-cancel').addEventListener('click', closeImport);
+importModal.addEventListener('click', function (ev) { if (ev.target === importModal) closeImport(); });
+
+function browseInto(input) {
+  if (!pickSupported) { input.focus(); return; }
+  input.blur();
+  api('/api/system/pick-folder').then(function (payload) {
+    if (payload && payload.path) {
+      input.value = payload.path;
+      if (input === impPath) impStore.value = '';
+    }
+  }).catch(function (err) {
+    if (err.status === 501) {
+      pickSupported = false;
+      toast(false, '当前平台不支持文件夹选择框，请手动输入路径');
+    } else {
+      toast(false, '选择文件夹失败：' + err.message);
+    }
+  });
+}
+
+impPathBrowse.addEventListener('click', function () { browseInto(impPath); });
+impStoreBrowse.addEventListener('click', function () { browseInto(impStore); });
+
+impOk.addEventListener('click', function () {
+  var pathValue = impPath.value.trim();
+  if (!pathValue) { toast(false, '请先填写项目文件夹'); return; }
+  impOk.disabled = true;
+  api('/api/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: pathValue, store: impStore.value.trim() || undefined })
+  }).then(function (payload) {
+    impOk.disabled = false;
+    closeImport();
+    toast(true, '已导入 ' + payload.project.name + ' · 记录保存到 ' + payload.project.store);
+    return loadProjects({ selectId: payload.project.id });
+  }).then(function () {
+    if (state.projects.length && (!state.project || state.project.id !== undefined)) {
+      // loadProjects 会自动选择第一个（导入后即新项目）
+    }
+  }).catch(function (err) {
+    impOk.disabled = false;
+    var hint = err.code === 'PROJECT_NOT_GIT' ? '（该目录不是 Git 仓库）' : '';
+    toast(false, '导入失败：' + err.message + hint);
+  });
+});
+
+/* ---------- 项目注销 ---------- */
+
+document.getElementById('proj-list').addEventListener('click', function (ev) {
+  var del = ev.target.closest('[data-del]');
+  if (del) {
+    ev.stopPropagation();
+    var id = del.getAttribute('data-del');
+    var project = state.projects.find(function (p) { return p.id === id; });
+    if (!project) return;
+    if (!window.confirm('注销项目「' + project.name + '」？\n磁盘上的记录不会被删除；注销后该项目的新对话将写入全局 journal。')) return;
+    api('/api/projects?id=' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+      toast(true, '已注销 ' + project.name + '（数据保留在 ' + project.store + '）');
+      return loadProjects({ refreshSelected: true });
+    }).catch(function (err) {
+      toast(false, '注销失败：' + err.message);
+    });
+    return;
+  }
+  var item = ev.target.closest('[data-proj]');
+  if (!item) return;
+  selectProject(item.getAttribute('data-proj'));
+});
+
+/* ---------- 其余事件 ---------- */
+
+document.getElementById('proj-q').addEventListener('input', function (ev) {
+  state.filter = ev.target.value;
+  renderSidebar();
+});
+
+document.getElementById('date-input').addEventListener('change', function (ev) {
+  state.date = ev.target.value || null;
+  renderChips();
+  renderTopbar();
+  if (state.project) fetchTurns();
+});
+
+document.getElementById('date-chips').addEventListener('click', function (ev) {
+  var chip = ev.target.closest('[data-date]');
+  if (!chip) return;
+  state.date = chip.getAttribute('data-date');
+  renderChips();
+  renderTopbar();
+  if (state.project) fetchTurns();
+});
+
+document.getElementById('today-btn').addEventListener('click', function () {
+  state.date = todayStr(0);
+  renderChips();
+  renderTopbar();
+  if (state.project) fetchTurns();
+});
+
+document.getElementById('turn-list').addEventListener('click', function (ev) {
+  if (ev.target.closest('.sentinel')) loadMoreTurns();
+});
+
+/* ---------- 设置：本机工具检测 + 运行时 ---------- */
+
+var settingsModal = document.getElementById('settings-modal');
+document.getElementById('settings-btn').addEventListener('click', function () {
+  settingsModal.classList.add('open');
+  renderSettings();
+});
+document.getElementById('settings-close').addEventListener('click', function () {
+  settingsModal.classList.remove('open');
+});
+settingsModal.addEventListener('click', function (ev) {
+  if (ev.target === settingsModal) settingsModal.classList.remove('open');
+});
+
+function renderSettings() {
+  var body = document.getElementById('settings-body');
+  body.innerHTML = '<div style="color:var(--text-3);font-size:12px">加载中…</div>';
+  api('/api/system/agents').then(function (payload) {
+    var agentsHtml = payload.agents.map(function (a) {
+      var installed = a.cliFound || a.configFound;
+      var chips =
+        '<span class="st-chip ' + (installed ? 'ok' : 'off') + '">' + (installed ? '已安装' : '未安装') + '</span>'
+        + '<span class="st-chip ' + (a.hookInstalled ? 'ok' : 'warn') + '">' + (a.hookInstalled ? '已接入采集' : '未接入') + '</span>';
+      var note = a.detail || (a.hookInstalled ? '' : installed ? '需要通过安装器 / consumer 注册 hook 后才会采集' : '未检测到该工具');
+      return '<div class="agent-row"><span class="an">' + escapeText(a.label) + '</span>' + chips
+        + '<span class="note">' + escapeText(note) + '</span></div>';
+    }).join('');
+
+    var b = payload.bridge;
+    var runtimeHtml =
+      '<div class="kv-row"><span class="k">活跃运行时</span><span class="v">' + escapeText(b.activeRuntimeVersion || '无') + '</span><span class="grow"></span>'
+      + (b.upgradeAvailable ? '<button class="btn-upg" id="upgrade-btn">升级到 ' + escapeText(b.coreVersion) + '</button>' : '')
+      + '</div>'
+      + '<div class="kv-row"><span class="k">当前代码版本</span><span class="v">' + escapeText(b.coreVersion)
+      + (b.runtimeVersions.length ? '（已物化: ' + escapeText(b.runtimeVersions.join(', ')) + '）' : '') + '</span></div>'
+      + '<div class="kv-row"><span class="k">Bridge Home</span><span class="v">' + escapeText(b.home) + '</span></div>';
+
+    var consumersHtml = payload.consumers.length
+      ? payload.consumers.map(function (c) {
+          return '<div class="kv-row"><span class="k">' + escapeText(c.name) + '</span><span class="v">'
+            + escapeText(c.lastSeenAt || '从未活跃') + '</span></div>';
+        }).join('')
+      : '<div class="kv-row"><span class="v" style="color:var(--text-3)">无消费方注册</span></div>';
+
+    body.innerHTML =
+      '<div class="set-section">AI 编程工具</div>' + agentsHtml
+      + '<div class="set-section">Bridge 运行时</div>' + runtimeHtml
+      + '<div class="set-section">消费方</div>' + consumersHtml;
+
+    var upg = document.getElementById('upgrade-btn');
+    if (upg) {
+      upg.addEventListener('click', function () {
+        upg.disabled = true;
+        upg.textContent = '升级中…';
+        api('/api/system/upgrade-runtime', { method: 'POST' }).then(function (result) {
+          toast(true, '运行时已升级到 ' + result.activeVersion + '（' + result.action + '），新对话将按项目路由落库');
+          renderSettings();
+        }).catch(function (err) {
+          upg.disabled = false;
+          upg.textContent = '重试升级';
+          toast(false, '升级失败：' + err.message);
+        });
+      });
+    }
+  }).catch(function (err) {
+    body.innerHTML = '<div style="color:var(--red);font-size:12.5px">加载失败：' + escapeText(err.message) + '</div>';
+  });
+}
+
+/* ---------- 启动 ---------- */
+
+loadHealth();
+loadProjects();
+setInterval(loadHealth, 30000);
+</script>
+</body>
+</html>

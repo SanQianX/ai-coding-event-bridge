@@ -2,9 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Journal } = require('../../core/journal');
 const { validateAndNormalizeEvent } = require('../../core/event-schema');
 const { resolveRepoContext } = require('../../core/repo-context');
+const { journalFor } = require('../../core/journal-router');
 const { CodexCursorStore } = require('./cursor-store');
 const { parseSessionChunk, extractMessage, extractWorkspaceMeta } = require('./session-parser');
 const { isCaptureDisabled, captureDisabledResult } = require('../capture-guard');
@@ -105,7 +105,6 @@ async function captureSessionUnlocked({ home, sessionsRoot, sessionId, cursorSto
     delete cursor.legacyFile;
   }
 
-  const journal = new Journal(path.join(home, 'journal'));
   let captured = 0;
   let completeBytes = 0;
 
@@ -157,6 +156,9 @@ async function captureSessionUnlocked({ home, sessionsRoot, sessionId, cursorSto
         eventKey: `codex:${sessionId}:${recordKey}`,
         meta: { recordKey, rolloutFile: key, byteOffset, phase: message.phase }
       });
+      // The workspace can switch mid-session (turn_context), so the journal is
+      // routed per record from the authoritative identity, never per session.
+      const journal = journalFor(home, state.repoIdentity);
       const appended = await journal.appendConversationEvent(event);
       state.lastRecordKey = recordKey;
       if (!appended.duplicate) captured += 1;

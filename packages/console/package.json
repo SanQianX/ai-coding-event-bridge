@@ -1,0 +1,29 @@
+{
+  "name": "@sanqianx/ai-coding-event-bridge-console",
+  "version": "0.2.0",
+  "description": "Local console for the AI coding event bridge: project import with per-project journal storage, REST query API and a built-in conversation explorer page.",
+  "license": "MIT",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SanQianX/ai-coding-event-bridge",
+    "directory": "packages/console"
+  },
+  "main": "src/server.js",
+  "bin": {
+    "ai-coding-event-bridge-console": "src/bin.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src",
+    "console"
+  ],
+  "scripts": {
+    "test": "node ../../test/run-all.js"
+  },
+  "dependencies": {
+    "@sanqianx/ai-coding-event-bridge": "0.2.0"
+  }
+}

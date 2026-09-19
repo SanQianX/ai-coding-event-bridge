@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const testDirs = ['packages/core/test', 'packages/ui/test'];
+const testDirs = ['packages/core/test', 'packages/ui/test', 'packages/console/test'];
 
 async function main() {
   let failed = 0;

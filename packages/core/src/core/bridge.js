@@ -6,6 +6,7 @@ const { bridgeHome } = require('./paths');
 const { Journal } = require('./journal');
 const { ConsumerRegistry } = require('./consumer-registry');
 const { compactJournal } = require('./compaction');
+const { journalFor, globalJournalDir } = require('./journal-router');
 
 /**
  * Stable host-facing facade over the Bridge runtime. Hosts (Project-Knowledge,
@@ -53,7 +54,10 @@ function createBridge({ homeDir } = {}) {
       if (!repoIdentity) {
         throw new Error('appendCommitBoundary requires repoIdentity');
       }
-      const result = await getJournal().appendCommitBoundary(repoIdentity, {
+      // Boundaries live in the same journal as the repo's conversation events
+      // (openTurnIdsAtCommit is computed from that journal's open-turn state).
+      const journal = journalFor(home, repoIdentity);
+      const result = await journal.appendCommitBoundary(repoIdentity, {
         commitSha,
         parents: parents !== undefined ? parents : parentShas,
         branch,
@@ -62,9 +66,17 @@ function createBridge({ homeDir } = {}) {
         operationId,
         meta
       });
+      let bridgeCursorAtCommit = result.sequence;
+      if (journal.journalDir !== globalJournalDir(home)) {
+        // Routed to a registered project's journal: the boundary is not in the
+        // global journal, so the global consumer watermark is unchanged. Keep
+        // the returned cursor conservative (never past unseen global content).
+        const bounds = await getJournal().getBounds();
+        bridgeCursorAtCommit = bounds.lastSequence;
+      }
       return {
         sequence: result.sequence,
-        bridgeCursorAtCommit: result.sequence,
+        bridgeCursorAtCommit,
         openTurnIdsAtCommit: result.openTurnIdsAtCommit,
         previousRepoBoundarySequence: result.previousRepoBoundarySequence,
         committedAt: committedAt || new Date().toISOString()

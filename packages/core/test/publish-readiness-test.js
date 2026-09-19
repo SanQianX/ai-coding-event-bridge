@@ -21,7 +21,7 @@ async function main() {
 
   // Package metadata: license + readme ship, versions stay in lockstep, engine >=18.
   const declared = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages', 'core', 'package.json'), 'utf8')).version;
-  for (const pkg of ['packages/core', 'packages/ui']) {
+  for (const pkg of ['packages/core', 'packages/ui', 'packages/console']) {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, pkg, 'package.json'), 'utf8'));
     assert.strictEqual(manifest.license, 'MIT');
     assert.strictEqual(manifest.engines.node, '>=18');
@@ -44,6 +44,14 @@ async function main() {
   const uiFiles = uiPack[0].files.map(f => f.path);
   assert(uiFiles.includes('src/conversation-explorer.css'), 'explorer css ships');
   assert(!uiFiles.some(f => f.startsWith('test/')), 'ui tests never ship');
+
+  const consolePack = JSON.parse(
+    execFileSync('npm', ['pack', '--workspace', 'packages/console', '--dry-run', '--json'], { cwd: ROOT, encoding: 'utf8', shell: true })
+  );
+  const consoleFiles = consolePack[0].files.map(f => f.path);
+  assert(consoleFiles.includes('console/index.html'), 'console page ships');
+  assert(consoleFiles.includes('src/server.js'), 'console server ships');
+  assert(!consoleFiles.some(f => f.startsWith('test/')), 'console tests never ship');
 
   console.log('publish-readiness-test PASS');
 }

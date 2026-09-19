@@ -32,6 +32,7 @@ jobs:
       - run: npm test
       - run: npm pack --workspace packages/core --dry-run
       - run: npm pack --workspace packages/ui --dry-run
+      - run: npm pack --workspace packages/console --dry-run
 
   windows:
     name: Core / Node ${{ matrix.node }} / Windows
@@ -51,3 +52,4 @@ jobs:
       - run: npm test
       - run: npm pack --workspace packages/core --dry-run
       - run: npm pack --workspace packages/ui --dry-run
+      - run: npm pack --workspace packages/console --dry-run

@@ -1,9 +1,8 @@
 'use strict';
 
-const path = require('path');
-const { Journal } = require('../../core/journal');
 const { normalizeClaudeCode } = require('../../core/normalizer');
 const { resolveRepoContext } = require('../../core/repo-context');
+const { journalFor } = require('../../core/journal-router');
 const { isCaptureDisabled, captureDisabledResult } = require('../capture-guard');
 const { notifyConsumers } = require('./notify');
 
@@ -27,7 +26,7 @@ async function main({ home, payload }) {
   }
   const cwd = typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : process.cwd();
   const repo = await resolveRepoContext(cwd);
-  const journal = new Journal(path.join(home, 'journal'));
+  const journal = journalFor(home, event.repoIdentity || repo.repoIdentity);
   const appended = await journal.appendConversationEvent({
     ...event,
     repoIdentity: event.repoIdentity || repo.repoIdentity,

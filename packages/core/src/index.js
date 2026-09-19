@@ -26,10 +26,14 @@ const {
   assertNoSyntheticEvidence
 } = require('./core/turn-identity');
 const { normalizeClaudeCode, normalizeCodex, normalizeOpenCode } = require('./core/normalizer');
+const projectRegistry = require('./core/project-registry');
+const { journalFor, globalJournalDir, projectJournalDir } = require('./core/journal-router');
+const { ConversationQuery } = require('./query/conversation-query');
 const claudeHookEntry = require('./connectors/claude-code/hook-entry');
 const claudeInstaller = require('./installers/claude-code/installer');
 const codexInstaller = require('./installers/codex/installer');
 const openCodeInstaller = require('./installers/opencode/installer');
+const zcodeInstaller = require('./installers/zcode/installer');
 const { createBridge } = require('./core/bridge');
 
 module.exports = {
@@ -63,12 +67,18 @@ module.exports = {
   normalizeClaudeCode,
   normalizeCodex,
   normalizeOpenCode,
+  projectRegistry,
+  journalFor,
+  globalJournalDir,
+  projectJournalDir,
+  ConversationQuery,
   claudeHookEntry,
   claudeInstaller,
   createBridge,
   installers: {
     claudeCode: claudeInstaller,
     codex: codexInstaller,
-    openCode: openCodeInstaller
+    openCode: openCodeInstaller,
+    zcode: zcodeInstaller
   }
 };

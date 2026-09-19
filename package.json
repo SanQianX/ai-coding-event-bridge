@@ -10,6 +10,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node test/run-all.js"
+    "test": "node test/run-all.js",
+    "serve": "node packages/console/src/bin.js serve"
   }
 }
