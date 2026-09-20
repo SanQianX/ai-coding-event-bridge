@@ -14,11 +14,13 @@
     --bg-hover: #303237;
     --bg-active: #36383e;
     --line: #3a3b40;
+    --line-soft: #2e2f34;
     --text: #e8e8ea;
     --text-2: #a0a1a5;
     --text-3: #6b6c70;
     --label: #8a8b90;
     --blue: #3b82f6;
+    --blue-soft: rgba(59,130,246,.12);
     --green: #34d399;
     --red: #e5695e;
     --mono: Consolas, "Microsoft YaHei", monospace;
@@ -40,7 +42,7 @@
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
   #app { flex: 1; display: flex; min-height: 0; }
-  aside { width: 248px; min-width: 248px; background: var(--bg-side); display: flex; flex-direction: column; }
+  aside { width: 248px; min-width: 248px; background: var(--bg-side); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; }
   .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
   .brand .mark { width: 22px; height: 22px; border-radius: 6px; background: var(--text); color: #16171a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
   .brand .name { font-size: 13px; font-weight: 600; }
@@ -55,7 +57,6 @@
   .group-label .sel { color: var(--text-3); font-family: var(--mono); font-weight: 400; }
   .group-label .grow { flex: 1; }
 
-  /* 项目条目：单选浏览；注册项目悬停出现注销按钮 */
   .proj { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; color: var(--text-2); cursor: pointer; user-select: none; }
   .proj:hover { background: var(--bg-hover); color: var(--text); }
   .proj.on { background: var(--bg-active); color: var(--text); }
@@ -79,47 +80,56 @@
   .side-foot .st { font-size: 11px; color: var(--text-3); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; }
-  .topbar h1 { font-size: 14px; font-weight: 600; }
-  .topbar .sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--line-soft); flex-shrink: 0; }
+  .topbar h1 { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .topbar .grow { flex: 1; }
   .icon-btn { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); flex-shrink: 0; }
   .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .back-btn { height: 26px; padding: 0 12px; border-radius: 99px; background: var(--bg-card); color: var(--text-2); font-size: 12px; display: none; align-items: center; gap: 6px; flex-shrink: 0; }
+  .back-btn:hover { color: var(--text); }
+  .back-btn.show { display: inline-flex; }
 
-  .date-zone { padding: 0 20px; }
-  .date-row { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; }
-  .date-box { flex: 1; height: 34px; display: flex; align-items: center; gap: 8px; background: var(--bg-input); border-radius: 10px; padding: 0 12px; color: var(--text-3); }
-  .date-box:focus-within { outline: 1px solid var(--blue); }
-  .date-box input { flex: 1; border: none; background: none; outline: none; color: var(--text); font: inherit; font-family: var(--mono); font-size: 12.5px; min-width: 0; }
-  .cta { height: 34px; padding: 0 18px; border-radius: 10px; background: var(--text); color: #16171a; font-weight: 600; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .cta:hover { background: #fff; }
-  .cta:disabled { opacity: .45; cursor: not-allowed; }
+  /* 顶栏右侧：折叠的历史入口 */
+  .hist-wrap { position: relative; flex-shrink: 0; }
+  .hist-btn { height: 28px; padding: 0 12px; border-radius: 99px; background: var(--bg-card); border: 1px solid var(--line-soft); color: var(--text-2); font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
+  .hist-btn:hover { color: var(--text); border-color: var(--line); }
+  .hist-btn.on { color: var(--text); border-color: var(--blue); background: var(--blue-soft); }
+  .hist-pop { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 400px; max-height: 420px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; z-index: 40; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  .hist-pop.open { display: block; }
+  .hist-pop .ph { font-size: 11px; color: var(--label); letter-spacing: .05em; padding: 6px 10px 4px; }
+  .hist-pop .pnote { font-size: 10.5px; color: var(--text-3); padding: 6px 10px 8px; line-height: 1.5; }
+  .citem { width: 100%; display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border-radius: 8px; text-align: left; color: var(--text-2); }
+  .citem:hover { background: var(--bg-hover); }
+  .citem.on { background: var(--bg-active); color: var(--text); }
+  .citem .r1 { display: flex; align-items: center; gap: 6px; }
+  .citem .sha { font-family: var(--mono); font-size: 11.5px; color: var(--blue); }
+  .citem .dt { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-left: auto; }
+  .citem .sb { font-size: 11.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .citem.on .sb, .citem:hover .sb { color: var(--text-2); }
 
-  .chips-row { max-width: 860px; margin: 8px auto 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 22px; }
-  .fchip { height: 22px; padding: 0 10px; border-radius: 99px; font-size: 11px; background: var(--bg-card); color: var(--text-2); border: 1px solid transparent; }
-  .fchip:hover { color: var(--text); }
-  .fchip.on { color: var(--text); border-color: var(--line); background: var(--bg-input); font-weight: 600; }
-
-  .results-wrap { flex: 1; overflow-y: auto; padding: 12px 20px 24px; }
-  .results { max-width: 860px; margin: 0 auto; }
-  .res-meta { font-size: 11px; color: var(--text-3); font-family: var(--mono); padding: 2px 2px 10px; display: flex; gap: 14px; flex-wrap: wrap; }
-
-  /* 轮次卡片 */
-  .turn { border-radius: 8px; background: var(--bg-card); padding: 10px 12px; margin-bottom: 6px; }
-  .turn .r1 { display: flex; align-items: center; gap: 8px; }
-  .t-badge { font-size: 11px; padding: 1px 8px; border-radius: 99px; flex-shrink: 0; color: var(--text-2); border: 1px solid var(--line); font-weight: 500; }
-  .turn .tm { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-3); flex-shrink: 0; }
-  .turn .uq { font-size: 13px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
-  .turn .as { background: var(--bg-input); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--text-2); line-height: 1.65; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-  .turn .cm { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 11px; font-family: var(--mono); color: var(--text-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .turn .cm .ok { color: var(--green); }
-  .turn .cm .multi { color: var(--blue); }
-  .turn .cm .sha { color: var(--text-2); }
-
+  /* 视图 */
+  .view { flex: 1; overflow-y: auto; padding: 16px 20px 40px; display: none; }
+  .view.on { display: block; }
+  .flow { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; }
+  .sep { display: flex; align-items: center; gap: 12px; margin: 10px 0 14px; }
+  .sep::before, .sep::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .sep-capsule { display: inline-flex; align-items: center; padding: 3px 14px; border-radius: 99px; background: var(--bg-card); border: 1px solid var(--line); font-size: 11px; color: var(--text-3); }
+  .msg-u { align-self: flex-end; max-width: 76%; background: var(--bg-input); border: 1px solid var(--line-soft); border-radius: 14px 14px 4px 14px; padding: 9px 14px; font-size: 13px; font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; margin: 3px 0; }
+  .msg-a-wrap { align-self: flex-start; width: 88%; margin: 3px 0; }
+  .msg-a-label { font-size: 10.5px; color: var(--text-3); margin: 0 0 3px 4px; font-family: var(--mono); }
+  .msg-a { background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: 4px 14px 14px 14px; padding: 10px 14px; font-size: 12.5px; color: var(--text-2); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
   .sentinel { text-align: center; font-size: 11px; color: var(--text-3); padding: 12px 0; cursor: pointer; font-family: var(--mono); }
   .sentinel:hover { color: var(--text-2); }
 
-  .empty { max-width: 860px; margin: 40px auto 0; text-align: center; }
+  /* 历史文档视图 */
+  .doc-h { max-width: 760px; margin: 6px auto 4px; }
+  .doc-h h2 { font-size: 15px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+  .doc-h .sub { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); margin-top: 3px; }
+  .doc-loading { max-width: 760px; margin: 30px auto; text-align: center; color: var(--text-3); font-family: var(--mono); font-size: 12px; }
+  .spin { display: inline-block; animation: sp 1s linear infinite; margin-right: 6px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  .empty { max-width: 760px; margin: 40px auto 0; text-align: center; }
   .empty .box { border: 1px dashed var(--line); border-radius: 10px; padding: 28px 24px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .empty .tile { width: 36px; height: 36px; border-radius: 9px; background: var(--bg-card); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
   .empty .t1 { font-size: 13px; }
@@ -207,30 +217,28 @@
 
   <main>
     <div class="topbar">
+      <button class="back-btn" id="back-btn">← 返回</button>
       <h1 id="main-title">会话浏览器</h1>
-      <span class="sub" id="top-sub"></span>
       <div class="grow"></div>
       <button class="icon-btn" id="settings-btn" title="设置：本机 AI 工具与 Bridge 运行时">
         <span class="svg-i" data-i="gear"></span>
       </button>
-    </div>
-
-    <div class="date-zone">
-      <div class="date-row">
-        <div class="date-box">
-          <span class="svg-i" data-i="calendar"></span>
-          <input id="date-input" type="date">
+      <div class="hist-wrap">
+        <button class="hist-btn" id="hist-btn">🕘 历史</button>
+        <div class="hist-pop" id="hist-pop">
+          <div class="ph">历史对话</div>
+          <div id="hist-list"></div>
         </div>
-        <button class="cta" id="today-btn">今天</button>
       </div>
-      <div class="chips-row" id="date-chips"></div>
     </div>
 
-    <div class="results-wrap">
-      <div class="results">
-        <div class="res-meta" id="res-meta"></div>
-        <div id="turn-list"></div>
-      </div>
+    <div class="view on" id="view-live">
+      <div class="flow" id="live-flow"></div>
+    </div>
+
+    <div class="view" id="view-doc">
+      <div class="doc-loading" id="doc-loading" style="display:none"><span class="spin">◌</span>加载中…</div>
+      <div id="doc-content" style="display:none"></div>
     </div>
   </main>
 </div>
@@ -252,11 +260,12 @@
     <div class="field">
       <label>对话记录保存地址</label>
       <div class="input-with-btn">
-        <input class="fin" id="imp-store" placeholder="留空使用默认地址" spellcheck="false">
+        <input class="fin" id="imp-store" placeholder="留空使用默认地址（建议 knowledge\<项目>\dev-conversations）" spellcheck="false">
         <button class="btn-sec" id="imp-store-browse">浏览…</button>
       </div>
       <div class="note">导入后，该项目里 Claude Code / Codex / OpenCode 的对话与提交边界会持久化到该地址；
-        留空则使用默认 <span class="mono">&lt;bridge home&gt;/projects/&lt;项目名&gt;</span>。已捕获的历史记录仍留在全局 journal，会一并显示。</div>
+        留空则使用默认 <span class="mono">&lt;bridge home&gt;/projects/&lt;项目名&gt;</span>。建议放到知识库目录下的
+        <span class="mono">dev-conversations</span> 文件夹，提交代码时会在此生成 <span class="mono">commits/&lt;sha&gt;.md</span> 封存文档。</div>
     </div>
 
     <div class="modal-actions">
@@ -345,6 +354,19 @@ function todayStr(offsetDays) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+function dayOf(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function dayLabel(day) {
+  if (day === todayStr(0)) return '今天';
+  if (day === todayStr(-1)) return '昨天';
+  return day ? day.slice(5).replace('-', '/') : '';
+}
+
 function timeOf(iso) {
   if (!iso) return '';
   var d = new Date(iso);
@@ -354,32 +376,21 @@ function timeOf(iso) {
 
 var SOURCE_LABELS = { 'claude-code': 'Claude', claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' };
 
-/* 提交注解 → 卡片标签（与 ui 包 mapCommitAnnotation 同规则） */
-function commitAnnotation(annotation) {
-  var shas = (annotation && Array.isArray(annotation.commitShas) ? annotation.commitShas : [])
-    .filter(function (sha) { return typeof sha === 'string' && /^[0-9a-f]{7,40}$/i.test(sha); })
-    .map(function (sha) { return sha.slice(0, 7); });
-  if (!shas.length) return { label: '未提交', cls: '', shas: [] };
-  if (shas.length === 1) return { label: '已提交', cls: 'ok', shas: shas };
-  return { label: '关联提交', cls: 'multi', shas: shas };
-}
-
 /* ---------- 状态 ---------- */
 
 var state = {
   projects: [],
-  project: null,      // 当前选中项目对象
-  dates: [],
-  date: null,
+  project: null,
   turns: [],
-  annotations: {},
   cursor: null,
   totalTurns: 0,
   loadingTurns: false,
-  filter: ''
+  filter: '',
+  commits: [],
+  currentDocFile: null
 };
 
-/* ---------- 渲染 ---------- */
+/* ---------- 渲染：侧栏 ---------- */
 
 function visibleProjects() {
   var q = state.filter.trim().toLowerCase();
@@ -393,8 +404,8 @@ function renderSidebar() {
   document.getElementById('proj-count').textContent = list.length ? '· ' + list.length : '';
   document.getElementById('proj-list').innerHTML = list.map(function (p) {
     var on = state.project && p.id === state.project.id;
-    var title = (p.path || p.id) + (p.auto ? '\n（自动发现：未导入，记录在全局 journal）' : '\n记录保存于 ' + p.store);
-    return '<div class="proj' + (on ? ' on' : '') + '" data-proj="' + escapeAttr(p.id) + '" data-auto="' + (p.auto ? '1' : '') + '" title="' + escapeAttr(title) + '">'
+    var title = (p.path || p.id) + (p.auto ? '（未导入，仅浏览已捕获记录）' : '\n' + p.store);
+    return '<div class="proj' + (on ? ' on' : '') + '" data-proj="' + escapeAttr(p.id) + '" title="' + escapeAttr(title) + '">'
       + '<span class="cb">' + ICONS.check + '</span>'
       + '<span class="pn">' + escapeText(p.name) + '</span>'
       + (p.auto ? '<span class="auto-tag">auto</span>' : '')
@@ -404,79 +415,54 @@ function renderSidebar() {
   }).join('');
 }
 
-function renderChips() {
-  var chips = state.dates.slice(0, 6).map(function (entry) {
-    var label = entry.date.slice(5).replace('-', '/');
-    if (entry.date === todayStr(0)) label = '今天';
-    else if (entry.date === todayStr(-1)) label = '昨天';
-    return '<button class="fchip' + (state.date === entry.date ? ' on' : '') + '" data-date="' + escapeAttr(entry.date) + '">'
-      + escapeText(label) + ' <span style="font-family:var(--mono)">' + entry.turns + '</span></button>';
-  });
-  document.getElementById('date-chips').innerHTML = chips.join('');
+/* ---------- 渲染：当前对话（聊天流） ---------- */
+
+function bubbleHtml(event, source) {
+  var label = SOURCE_LABELS[source] || source || 'AI';
+  var time = timeOf(event.capturedAt);
+  if (event.role === 'user') {
+    return '<div class="msg-u" title="' + escapeAttr(time) + '">' + escapeText(event.content) + '</div>';
+  }
+  return '<div class="msg-a-wrap"><div class="msg-a-label">' + escapeText(label) + (time ? ' · ' + escapeText(time) : '') + '</div>'
+    + '<div class="msg-a">' + escapeText(event.content) + '</div></div>';
 }
 
-function renderTurnCard(turn) {
-  var userEvent = turn.userEvents && turn.userEvents[0];
-  var userText = userEvent ? (userEvent.content || '') : '';
-  var time = timeOf(userEvent && userEvent.capturedAt);
-  var assistant = (turn.assistantEvents || []).map(function (event) {
-    return '<div class="as">' + escapeText(event.content === undefined || event.content === null ? '' : event.content) + '</div>';
-  }).join('');
-  var commit = commitAnnotation(state.annotations[turn.turnId]);
-  var shas = commit.shas.map(function (s) { return '<span class="sha">' + escapeText(s) + '</span>'; }).join('');
-  var source = SOURCE_LABELS[turn.source] || turn.source || '';
-  return '<article class="turn" data-turn-card data-source="' + escapeAttr(turn.source || '') + '">'
-    + '<div class="r1"><span class="t-badge">' + escapeText(source) + '</span>'
-    + '<span class="tm">' + escapeText(time) + '</span></div>'
-    + '<div class="uq">' + escapeText(userText) + '</div>'
-    + assistant
-    + '<div class="cm"><span class="' + commit.cls + '">' + escapeText(commit.label) + '</span>' + (shas ? '<span>' + shas + '</span>' : '') + '</div>'
-    + '</article>';
-}
-
-function renderTurnList() {
-  var el = document.getElementById('turn-list');
-  if (state.loadingTurns && !state.turns.length) {
-    el.innerHTML = '<div class="empty"><div class="t2">加载中…</div></div>';
+function renderLive() {
+  var el = document.getElementById('live-flow');
+  if (!state.project) {
+    el.innerHTML = '<div class="empty"><div class="box"><div class="tile">' + ICONS.inbox + '</div>'
+      + '<div class="t1">先导入一个项目</div><div class="t2">左侧「导入项目」，选择本地 Git 仓库</div></div></div>';
     return;
   }
-  var html = state.turns.map(renderTurnCard).join('');
-  if (state.cursor) {
-    html += '<div class="sentinel">继续滚动或点击加载更多</div>';
+  if (state.loadingTurns && !state.turns.length) {
+    el.innerHTML = '<div class="empty"><div class="t2" style="color:var(--text-3);font-size:12px">加载中…</div></div>';
+    return;
   }
   if (!state.turns.length) {
-    html = '<div class="empty"><div class="box"><div class="tile">' + ICONS.inbox + '</div>'
-      + '<div class="t1">这一天没有开发对话</div>'
-      + '<div class="t2">换个日期，或切换左侧项目</div>'
-      + '</div></div>';
+    el.innerHTML = '<div class="empty"><div class="box"><div class="tile">' + ICONS.inbox + '</div>'
+      + '<div class="t1">还没有对话</div><div class="t2">在这个项目里和 AI 聊过后会出现在这里</div></div></div>';
+    return;
   }
+  var html = '';
+  var prevDay = null;
+  state.turns.forEach(function (turn) {
+    var first = (turn.userEvents && turn.userEvents[0]) || (turn.assistantEvents && turn.assistantEvents[0]);
+    var day = dayOf(first && first.capturedAt);
+    if (day && day !== prevDay) {
+      html += '<div class="sep"><span class="sep-capsule">' + escapeText(dayLabel(day)) + '</span></div>';
+      prevDay = day;
+    }
+    var events = (turn.userEvents || []).concat(turn.assistantEvents || []);
+    events.sort(function (a, b) { return (a.sequence || 0) - (b.sequence || 0); });
+    events.forEach(function (event) { html += bubbleHtml(event, turn.source); });
+  });
+  if (state.cursor) html += '<div class="sentinel">继续滚动或点击加载更多</div>';
   el.innerHTML = html;
   observeSentinel();
 }
 
-function renderMeta() {
-  var bySource = {};
-  state.turns.forEach(function (t) { bySource[t.source] = (bySource[t.source] || 0) + 1; });
-  var parts = [state.date || '全部日期', state.turns.length + (state.totalTurns > state.turns.length ? ' / ' + state.totalTurns : '') + ' 轮'];
-  Object.keys(bySource).sort().forEach(function (s) { parts.push((SOURCE_LABELS[s] || s) + ' ' + bySource[s]); });
-  document.getElementById('res-meta').textContent = parts.join(' · ');
-}
-
-function renderTopbar() {
-  var project = state.project;
-  document.getElementById('main-title').textContent = project ? project.name : '会话浏览器';
-  document.getElementById('top-sub').textContent = project
-    ? (project.auto ? '自动发现 · 记录在全局 journal' : '记录保存于 ' + project.store)
-    : '';
-  document.getElementById('date-input').value = state.date || '';
-}
-
-function renderAll() { renderSidebar(); renderChips(); renderTopbar(); renderMeta(); renderTurnList(); }
-
-/* ---------- 数据加载 ---------- */
-
 function observeSentinel() {
-  var sentinel = document.querySelector('.sentinel');
+  var sentinel = document.querySelector('#view-live .sentinel');
   if (sentinel && typeof IntersectionObserver === 'function') {
     var io = new IntersectionObserver(function (entries) {
       if (entries.some(function (e) { return e.isIntersecting; })) {
@@ -488,31 +474,36 @@ function observeSentinel() {
   }
 }
 
+function renderTopbar() {
+  var project = state.project;
+  document.getElementById('main-title').textContent = project ? project.name : '会话浏览器';
+}
+
+/* ---------- 数据加载：当前对话 ---------- */
+
 function loadMoreTurns() {
   if (!state.project || !state.cursor || state.loadingTurns) return;
   fetchTurns({ append: true });
 }
 
 function fetchTurns(options) {
+  if (!state.project) return Promise.resolve();
   var append = options && options.append;
   state.loadingTurns = true;
-  if (!append) { state.turns = []; state.annotations = {}; state.cursor = null; }
-  renderTurnList();
+  if (!append) { state.turns = []; state.cursor = null; }
+  renderLive();
   var query = '/api/turns?project=' + encodeURIComponent(state.project.id)
-    + (state.date ? '&date=' + encodeURIComponent(state.date) : '')
     + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
   return api(query).then(function (payload) {
     if (!state.project || payload.project !== state.project.id) return; // 切换已发生，丢弃过期响应
     state.turns = state.turns.concat(payload.turns || []);
-    Object.assign(state.annotations, payload.annotations || {});
     state.cursor = payload.nextCursor || null;
     state.totalTurns = payload.totalTurns || state.turns.length;
     state.loadingTurns = false;
-    renderMeta();
-    renderTurnList();
+    renderLive();
   }).catch(function (err) {
     state.loadingTurns = false;
-    renderTurnList();
+    renderLive();
     toast(false, '加载对话失败：' + err.message);
   });
 }
@@ -521,21 +512,15 @@ function selectProject(id, options) {
   var project = state.projects.find(function (p) { return p.id === id; });
   if (!project) return;
   state.project = project;
-  state.date = null;
   state.turns = [];
-  document.getElementById('date-chips').innerHTML = '';
+  state.cursor = null;
+  state.commits = [];
+  state.currentDocFile = null;
+  showLive();
   renderTopbar();
   renderSidebar();
-  api('/api/dates?project=' + encodeURIComponent(id)).then(function (payload) {
-    if (!state.project || state.project.id !== id) return;
-    state.dates = payload.dates || [];
-    state.date = (state.dates[0] && state.dates[0].date) || todayStr(0);
-    renderChips();
-    renderTopbar();
-    if (!(options && options.keepTurns)) fetchTurns();
-  }).catch(function (err) {
-    toast(false, '加载日期失败：' + err.message);
-  });
+  renderHistList();
+  if (!(options && options.keepTurns)) fetchTurns();
 }
 
 function loadProjects(options) {
@@ -550,8 +535,7 @@ function loadProjects(options) {
         state.project = null;
         state.turns = [];
         renderTopbar();
-        renderMeta();
-        renderTurnList();
+        renderLive();
       }
     } else if (options && options.refreshSelected) {
       selectProject(state.project.id, { keepTurns: false });
@@ -564,13 +548,180 @@ function loadProjects(options) {
 function loadHealth() {
   api('/api/health').then(function (payload) {
     document.getElementById('foot-dot').classList.remove('off');
-    document.getElementById('foot-st').textContent =
-      'journal · seq ' + payload.lastSequence + ' · ' + payload.registeredProjects + ' 个已导入项目';
+    document.getElementById('foot-st').textContent = '已连接 · ' + payload.registeredProjects + ' 个已导入项目';
   }).catch(function () {
     document.getElementById('foot-dot').classList.add('off');
-    document.getElementById('foot-st').textContent = 'bridge home 不可用';
+    document.getElementById('foot-st').textContent = '无法连接';
   });
 }
+
+/* ---------- 历史对话（封存文档，点击才加载） ---------- */
+
+var histBtn = document.getElementById('hist-btn');
+var histPop = document.getElementById('hist-pop');
+
+function renderHistList() {
+  var el = document.getElementById('hist-list');
+  if (!state.project) { el.innerHTML = ''; return; }
+  if (state.project.auto) {
+    el.innerHTML = '<div class="pnote">该项目未导入，没有历史对话档案。</div>';
+    return;
+  }
+  if (!state.commits.length) {
+    el.innerHTML = '<div class="pnote">还没有历史对话。提交代码后，这段时间的对话会归档到这里。</div>';
+    return;
+  }
+  el.innerHTML = state.commits.map(function (doc) {
+    var label = doc.sha ? doc.sha.slice(0, 7) : '未提交';
+    var date = (doc.date || '').slice(0, 10);
+    return '<button class="citem' + (state.currentDocFile === doc.file ? ' on' : '') + '" data-doc="' + escapeAttr(doc.file) + '">'
+      + '<span class="r1"><span class="sha">' + escapeText(label) + '</span><span class="dt">' + escapeText(date) + '</span></span>'
+      + '<span class="sb">' + escapeText(doc.subject) + '</span></button>';
+  }).join('');
+}
+
+function refreshHist() {
+  if (!state.project || state.project.auto) { state.commits = []; renderHistList(); return; }
+  api('/api/commits?project=' + encodeURIComponent(state.project.id)).then(function (payload) {
+    if (!state.project || payload.project !== state.project.id) return;
+    state.commits = payload.commits || [];
+    renderHistList();
+  }).catch(function () {
+    state.commits = [];
+    renderHistList();
+  });
+}
+
+histBtn.addEventListener('click', function (ev) {
+  ev.stopPropagation();
+  var willOpen = !histPop.classList.contains('open');
+  histPop.classList.toggle('open', willOpen);
+  histBtn.classList.toggle('on', willOpen);
+  if (willOpen) refreshHist();
+});
+document.addEventListener('click', function (ev) {
+  if (!ev.target.closest('.hist-wrap')) {
+    histPop.classList.remove('open');
+    histBtn.classList.remove('on');
+  }
+});
+
+/* ---------- 封存文档解析（与 core 渲染规则对应：围栏感知） ---------- */
+
+function splitSealedSections(body) {
+  var sections = [];
+  var current = null;
+  var fence = null;
+  body.split('\n').forEach(function (line) {
+    var fenceMatch = line.match(/^(`{3,})/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1].length === fence.length) fence = null;
+    } else if (fenceMatch) {
+      fence = fenceMatch[1];
+    } else if (line.indexOf('## ') === 0) {
+      current = [line];
+      sections.push(current);
+      return;
+    }
+    if (current) current.push(line);
+  });
+  return sections.map(function (lines) { return lines.join('\n'); }).filter(Boolean);
+}
+
+function parseSealedDoc(text) {
+  var fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  var fm = {};
+  (fmMatch ? fmMatch[1] : '').split(/\r?\n/).forEach(function (line) {
+    var kv = line.match(/^([A-Za-z]+):\s*(.*)$/);
+    if (kv) fm[kv[1]] = kv[2].replace(/^'/, '').replace(/'$/, '');
+  });
+  var turns = [];
+  var appendix = [];
+  splitSealedSections(text.slice(fmMatch ? fmMatch[0].length : 0)).forEach(function (section) {
+    var isAppendix = section.indexOf('## 未配对事件') === 0;
+    var events = [];
+    var re = /^### (用户|助手)(?:[^\n]*)?\n\n(`{3,})\n([\s\S]*?)\n\2/gm;
+    var m;
+    while ((m = re.exec(section))) {
+      events.push({ role: m[1] === '用户' ? 'user' : 'assistant', content: m[3] });
+    }
+    if (isAppendix) appendix = events;
+    else turns.push({ events: events });
+  });
+  return { fm: fm, turns: turns, appendix: appendix };
+}
+
+/* ---------- 历史文档视图 ---------- */
+
+function showLive() {
+  state.currentDocFile = null;
+  document.getElementById('view-doc').classList.remove('on');
+  document.getElementById('view-live').classList.add('on');
+  document.getElementById('back-btn').classList.remove('show');
+  renderHistList();
+}
+
+function showDocLoading(show) {
+  document.getElementById('doc-loading').style.display = show ? 'block' : 'none';
+  if (show) document.getElementById('doc-content').style.display = 'none';
+}
+
+document.getElementById('hist-list').addEventListener('click', function (ev) {
+  var item = ev.target.closest('[data-doc]');
+  if (!item || !state.project) return;
+  var file = item.getAttribute('data-doc');
+  if (state.currentDocFile === file && document.getElementById('view-doc').classList.contains('on')) {
+    histPop.classList.remove('open');
+    histBtn.classList.remove('on');
+    return;
+  }
+  state.currentDocFile = file;
+  histPop.classList.remove('open');
+  histBtn.classList.remove('on');
+  renderHistList();
+  var doc = state.commits.find(function (d) { return d.file === file; }) || { subject: file, sha: null, date: null };
+  document.getElementById('view-live').classList.remove('on');
+  document.getElementById('view-doc').classList.add('on');
+  document.getElementById('back-btn').classList.add('show');
+  showDocLoading(true);
+  // 懒加载：此刻才请求这一份文档，其余历史永不加载
+  fetch('/api/commits/' + encodeURIComponent(file) + '?project=' + encodeURIComponent(state.project.id))
+    .then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    })
+    .then(function (text) {
+      if (state.currentDocFile !== file) return; // 已切换到别的文档/项目
+      var parsed = parseSealedDoc(text);
+      var title = doc.subject || parsed.fm.subject || (parsed.fm.commitSha || file).slice(0, 12);
+      var subParts = [];
+      var when = doc.date || parsed.fm.committedAt || parsed.fm.sealedAt || '';
+      if (when) subParts.push(when.slice(0, 16).replace('T', ' '));
+      var sha = doc.sha || parsed.fm.commitSha || '';
+      if (sha) subParts.push(String(sha).slice(0, 7));
+      var html = '<div class="doc-h"><h2>' + escapeText(title) + '</h2>'
+        + (subParts.length ? '<div class="sub">' + escapeText(subParts.join(' · ')) + '</div>' : '') + '</div>'
+        + '<div class="flow">';
+      parsed.turns.forEach(function (turn) {
+        turn.events.forEach(function (event) { html += bubbleHtml(event, 'claude-code'); });
+      });
+      parsed.appendix.forEach(function (event) { html += bubbleHtml(event, 'claude-code'); });
+      html += '</div>';
+      document.getElementById('doc-content').innerHTML = html;
+      showDocLoading(false);
+      document.getElementById('doc-content').style.display = 'block';
+      document.querySelector('#view-doc').scrollTop = 0;
+    })
+    .catch(function (err) {
+      if (state.currentDocFile !== file) return;
+      showDocLoading(false);
+      document.getElementById('doc-content').style.display = 'block';
+      document.getElementById('doc-content').innerHTML = '<div class="empty"><div class="box"><div class="t1">文档加载失败</div>'
+        + '<div class="t2">' + escapeText(err.message) + '</div></div></div>';
+    });
+});
+
+document.getElementById('back-btn').addEventListener('click', showLive);
 
 /* ---------- 导入项目 ---------- */
 
@@ -626,12 +777,8 @@ impOk.addEventListener('click', function () {
   }).then(function (payload) {
     impOk.disabled = false;
     closeImport();
-    toast(true, '已导入 ' + payload.project.name + ' · 记录保存到 ' + payload.project.store);
-    return loadProjects({ selectId: payload.project.id });
-  }).then(function () {
-    if (state.projects.length && (!state.project || state.project.id !== undefined)) {
-      // loadProjects 会自动选择第一个（导入后即新项目）
-    }
+    toast(true, '已导入 ' + payload.project.name);
+    return loadProjects();
   }).catch(function (err) {
     impOk.disabled = false;
     var hint = err.code === 'PROJECT_NOT_GIT' ? '（该目录不是 Git 仓库）' : '';
@@ -639,7 +786,7 @@ impOk.addEventListener('click', function () {
   });
 });
 
-/* ---------- 项目注销 ---------- */
+/* ---------- 项目注销 / 选择 ---------- */
 
 document.getElementById('proj-list').addEventListener('click', function (ev) {
   var del = ev.target.closest('[data-del]');
@@ -648,9 +795,9 @@ document.getElementById('proj-list').addEventListener('click', function (ev) {
     var id = del.getAttribute('data-del');
     var project = state.projects.find(function (p) { return p.id === id; });
     if (!project) return;
-    if (!window.confirm('注销项目「' + project.name + '」？\n磁盘上的记录不会被删除；注销后该项目的新对话将写入全局 journal。')) return;
+    if (!window.confirm('注销项目「' + project.name + '」？\n磁盘上的记录不会被删除；注销后该项目的新对话将写入全局记录。')) return;
     api('/api/projects?id=' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
-      toast(true, '已注销 ' + project.name + '（数据保留在 ' + project.store + '）');
+      toast(true, '已注销 ' + project.name + '（磁盘数据保留）');
       return loadProjects({ refreshSelected: true });
     }).catch(function (err) {
       toast(false, '注销失败：' + err.message);
@@ -662,37 +809,12 @@ document.getElementById('proj-list').addEventListener('click', function (ev) {
   selectProject(item.getAttribute('data-proj'));
 });
 
-/* ---------- 其余事件 ---------- */
-
 document.getElementById('proj-q').addEventListener('input', function (ev) {
   state.filter = ev.target.value;
   renderSidebar();
 });
 
-document.getElementById('date-input').addEventListener('change', function (ev) {
-  state.date = ev.target.value || null;
-  renderChips();
-  renderTopbar();
-  if (state.project) fetchTurns();
-});
-
-document.getElementById('date-chips').addEventListener('click', function (ev) {
-  var chip = ev.target.closest('[data-date]');
-  if (!chip) return;
-  state.date = chip.getAttribute('data-date');
-  renderChips();
-  renderTopbar();
-  if (state.project) fetchTurns();
-});
-
-document.getElementById('today-btn').addEventListener('click', function () {
-  state.date = todayStr(0);
-  renderChips();
-  renderTopbar();
-  if (state.project) fetchTurns();
-});
-
-document.getElementById('turn-list').addEventListener('click', function (ev) {
+document.getElementById('live-flow').addEventListener('click', function (ev) {
   if (ev.target.closest('.sentinel')) loadMoreTurns();
 });
 
@@ -751,7 +873,7 @@ function renderSettings() {
         upg.disabled = true;
         upg.textContent = '升级中…';
         api('/api/system/upgrade-runtime', { method: 'POST' }).then(function (result) {
-          toast(true, '运行时已升级到 ' + result.activeVersion + '（' + result.action + '），新对话将按项目路由落库');
+          toast(true, '运行时已升级到 ' + result.activeVersion);
           renderSettings();
         }).catch(function (err) {
           upg.disabled = false;

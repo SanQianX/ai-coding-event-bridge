@@ -86,10 +86,13 @@ async function main() {
     commitSha: '9f8e7d6a1b2c3d4e5f60718293a4b5c6d7e8f90a',
     branch: 'main'
   });
-  const boundaryRecords = readJournalLines(path.join(entry.store, 'journal')).filter(
-    (record) => record.schema === 'git-commit-boundary/v1'
-  );
-  assert.strictEqual(boundaryRecords.length, 1, 'boundary for a registered repo lands in the project journal');
+  // The journal is a conveyor: the sealed boundary trims itself out of the
+  // project journal once its archive file exists on disk.
+  const sealedFile = path.join(entry.store, 'commits', '9f8e7d6a1b2c3d4e5f60718293a4b5c6d7e8f90a.md');
+  assert.ok(fs.existsSync(sealedFile), 'boundary for a registered repo seals into the project store');
+  assert.ok(fs.readFileSync(sealedFile, 'utf8').includes('route me to the project journal'), 'captured conversation is archived');
+  assert.strictEqual(readJournalLines(path.join(entry.store, 'journal')).length, 0, 'sealed prefix is trimmed from the journal');
+  assert.strictEqual(boundary.projection.sealed, true, 'projection reports the seal');
   assert.strictEqual(boundary.bridgeCursorAtCommit, 0, 'routed boundary keeps the global watermark conservative');
 
   const unknownRepoBoundary = await bridge.appendCommitBoundary({

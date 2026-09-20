@@ -7,6 +7,7 @@ const {
   ConversationQuery,
   ConsumerRegistry,
   projectRegistry,
+  commitProjection,
   ensureRuntimeHome,
   semver,
   globalJournalDir,
@@ -20,18 +21,22 @@ const corePackage = require('@sanqianx/ai-coding-event-bridge/package.json');
 const BOUNDARY_SCHEMA = 'git-commit-boundary/v1';
 const EVENT_SCHEMA = 'ai-coding-event/v1';
 const MAX_BODY_BYTES = 1024 * 1024;
+const COMMIT_DOC_PATTERN = /^(?:[0-9a-f]{7,64}|[0-9]{4}-[0-9]{2}-[0-9]{2}-uncommitted-\d+)\.md$/i;
 
 /**
  * Local console server for the AI coding event bridge. Serves the explorer
  * page plus a JSON API over the bridge journals:
  *
  *   - registered projects (imported via POST /api/projects) own a journal at
- *     <store>/journal and are also merged with their legacy events that still
- *     live in the global journal;
+ *     <store>/journal; the journal is a conveyor that only keeps the current
+ *     (uncommitted) conversation, and commits/<sha>.md files are the archive;
  *   - auto-discovered projects (captured but never imported) read from the
  *     global journal only;
- *   - capture itself is untouched: this process only reads the registry and
- *     the journals, and mutates nothing except projects.json on import.
+ *   - besides importing projects, the console maintains each project journal:
+ *     at startup (and before current-conversation reads) it reconciles the
+ *     trim watermark against sealed files on disk and fires the age fuse for
+ *     never-committed tails. Maintenance is best-effort and never fails a
+ *     request.
  */
 
 function localDay(iso) {
@@ -258,6 +263,123 @@ function createConsoleServer({ home }) {
     res.end(body);
   }
 
+  // ---------- project journal maintenance (conveyor semantics) ----------
+
+  function sealDirOf(project) {
+    return path.join(project.store, 'commits');
+  }
+
+  async function maintainProject(project) {
+    const journal = existingJournal(projectJournalDir(project));
+    if (!journal) return;
+    const sealDir = sealDirOf(project);
+    try {
+      await commitProjection.reconcileTrim({ journal, sealDir });
+    } catch (_) {
+      // best-effort: the next maintenance pass retries
+    }
+    try {
+      await commitProjection.sealUncommittedTail({ journal, sealDir });
+    } catch (_) {
+      // best-effort
+    }
+  }
+
+  function maintainAll() {
+    return Promise.all(projectRegistry.listProjects(home).map((entry) => maintainProject({ ...entry, auto: false }))).catch(() => {});
+  }
+
+  /**
+   * The current conversation of a registered project: turns that live in the
+   * project journal after its last commit boundary. Everything earlier is
+   * archived under <store>/commits and served by the commit-doc endpoints.
+   */
+  async function currentTurns(project, { limit, cursorRaw }) {
+    const dir = projectJournalDir(project);
+    const journal = existingJournal(dir);
+    if (!journal) {
+      return { project: project.id, date: null, turns: [], nextCursor: null, totalTurns: 0, annotations: {} };
+    }
+    const boundaries = await journal.readEvents({
+      filter: (record) => record.schema === BOUNDARY_SCHEMA && repoIdentityKey(record.repoIdentity) === project.id
+    });
+    const lastBoundary = boundaries.reduce((max, b) => Math.max(max, b.sequence), 0);
+    const records = await journal.readEvents({ fromSequence: lastBoundary + 1 });
+    const turns = queryAt(dir)._projectTurns(records.filter(isConversationEvent));
+    turns.sort((a, b) => a.startSequence - b.startSequence);
+    let start = 0;
+    if (cursorRaw) {
+      let decoded = null;
+      try {
+        decoded = JSON.parse(Buffer.from(String(cursorRaw), 'base64url').toString('utf8'));
+      } catch (_) {
+        decoded = null;
+      }
+      if (!decoded || decoded.v !== 1 || typeof decoded.seq !== 'number') return null;
+      start = turns.findIndex((turn) => turn.startSequence > decoded.seq);
+      if (start === -1) start = turns.length;
+    }
+    const page = turns.slice(start, start + limit);
+    return {
+      project: project.id,
+      date: null,
+      turns: page,
+      nextCursor: start + limit < turns.length && page.length ? encodeCursor({ v: 1, seq: page[page.length - 1].startSequence }) : null,
+      totalTurns: turns.length,
+      annotations: {}
+    };
+  }
+
+  // ---------- commit documents (the per-commit archive) ----------
+
+  function readDocHead(file, maxBytes = 4096) {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(maxBytes);
+      const read = fs.readSync(fd, buf, 0, maxBytes, 0);
+      return buf.toString('utf8', 0, read);
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  function parseFrontmatter(text) {
+    const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!match) return {};
+    const out = {};
+    for (const line of match[1].split(/\r?\n/)) {
+      const kv = line.match(/^([A-Za-z]+):\s*(.*)$/);
+      if (kv) out[kv[1]] = kv[2].replace(/^'/, '').replace(/'$/, '');
+    }
+    return out;
+  }
+
+  async function listCommitDocs(project) {
+    if (project.auto) return [];
+    const dir = sealDirOf(project);
+    let names;
+    try {
+      names = fs.readdirSync(dir);
+    } catch (_) {
+      return [];
+    }
+    const docs = [];
+    for (const name of names) {
+      if (!name.endsWith('.md')) continue;
+      const fm = parseFrontmatter(readDocHead(path.join(dir, name)));
+      docs.push({
+        file: name,
+        sha: /^[0-9a-f]{7,64}$/.test(String(fm.commitSha || '')) ? fm.commitSha : null,
+        date: fm.committedAt || fm.sealedAt || null,
+        subject: fm.subject || (String(fm.uncommitted) === 'true' ? '未提交的对话' : name.replace(/\.md$/, '')),
+        turnCount: Number(fm.turnCount) || 0,
+        uncommitted: String(fm.uncommitted) === 'true'
+      });
+    }
+    docs.sort((a, b) => ((a.date || '') < (b.date || '') ? 1 : -1));
+    return docs;
+  }
+
   function sendPage(res) {
     let html;
     try {
@@ -440,10 +562,46 @@ function createConsoleServer({ home }) {
       return;
     }
 
+    // Single commit document, fetched lazily by the UI when a history entry
+    // is opened. Only names the sealer could have produced are accepted.
+    if (req.method === 'GET' && url.pathname.startsWith('/api/commits/')) {
+      let docName;
+      try {
+        docName = decodeURIComponent(url.pathname.slice('/api/commits/'.length));
+      } catch (_) {
+        docName = '';
+      }
+      if (!COMMIT_DOC_PATTERN.test(docName)) {
+        sendJson(res, 400, { error: { code: 'DOC_NAME_INVALID', message: 'invalid commit document name' } });
+        return;
+      }
+      const project = await resolveProject(url.searchParams.get('project'));
+      if (!project) {
+        sendJson(res, 404, { error: { code: 'PROJECT_NOT_FOUND', message: `unknown project: ${url.searchParams.get('project')}` } });
+        return;
+      }
+      if (project.auto) {
+        sendJson(res, 404, { error: { code: 'COMMITS_UNSUPPORTED', message: 'auto-discovered projects keep no commit archive' } });
+        return;
+      }
+      const file = path.join(sealDirOf(project), docName);
+      let text;
+      try {
+        text = fs.readFileSync(file, 'utf8');
+      } catch (_) {
+        sendJson(res, 404, { error: { code: 'DOC_NOT_FOUND', message: `no sealed document: ${docName}` } });
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(text);
+      return;
+    }
+
     const projectId = url.searchParams.get('project');
     if (
       route === 'GET /api/dates' ||
       route === 'GET /api/turns' ||
+      route === 'GET /api/commits' ||
       route === 'GET /api/sessions' ||
       route === 'GET /api/search'
     ) {
@@ -459,8 +617,20 @@ function createConsoleServer({ home }) {
       }
 
       if (route === 'GET /api/turns') {
-        const date = url.searchParams.get('date') || null;
         const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 50, 200));
+        if (!project.auto) {
+          // Registered projects: the journal is a conveyor — serve only the
+          // current (uncommitted) conversation and keep it maintained.
+          await maintainProject(project);
+          const current = await currentTurns(project, { limit, cursorRaw: url.searchParams.get('cursor') });
+          if (!current) {
+            sendJson(res, 400, { error: { code: 'CURSOR_INVALID', message: 'cursor is invalid; restart the query' } });
+            return;
+          }
+          sendJson(res, 200, current);
+          return;
+        }
+        const date = url.searchParams.get('date') || null;
         const merged = await mergedTurns(project, { date });
         const cursor = url.searchParams.get('cursor');
         let start = 0;
@@ -482,6 +652,11 @@ function createConsoleServer({ home }) {
           totalTurns: merged.length,
           annotations: await annotationsFor(project, page)
         });
+        return;
+      }
+
+      if (route === 'GET /api/commits') {
+        sendJson(res, 200, { project: project.id, commits: await listCommitDocs(project) });
         return;
       }
 
@@ -513,6 +688,10 @@ function createConsoleServer({ home }) {
 
     sendJson(res, 404, { error: { code: 'NOT_FOUND', message: route } });
   }
+
+  // Startup maintenance: reconcile trim watermarks and fire age fuses. Runs
+  // in the background; failures never surface to requests.
+  maintainAll();
 
   return async function handler(req, res) {
     try {

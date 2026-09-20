@@ -2,8 +2,7 @@
 
 const path = require('path');
 const { Journal } = require('./journal');
-const { loadRegistry } = require('./project-registry');
-const { repoIdentityKey } = require('./repo-context');
+const { findProject } = require('./project-registry');
 
 /**
  * Capture-side journal routing. Events for a registered project (matched by
@@ -27,12 +26,8 @@ function projectJournalDir(project) {
 
 function journalFor(home, repoIdentity) {
   let dir = globalJournalDir(home);
-  const key = repoIdentityKey(repoIdentity);
-  if (key) {
-    const registry = loadRegistry(home);
-    const project = registry.projects.find((candidate) => candidate.id === key);
-    if (project) dir = projectJournalDir(project);
-  }
+  const project = findProject(home, repoIdentity);
+  if (project) dir = projectJournalDir(project);
   let journal = journalCache.get(dir);
   if (!journal) {
     journal = new Journal(dir);

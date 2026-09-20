@@ -27,6 +27,7 @@ const {
 } = require('./core/turn-identity');
 const { normalizeClaudeCode, normalizeCodex, normalizeOpenCode } = require('./core/normalizer');
 const projectRegistry = require('./core/project-registry');
+const commitProjection = require('./core/commit-projection');
 const { journalFor, globalJournalDir, projectJournalDir } = require('./core/journal-router');
 const { ConversationQuery } = require('./query/conversation-query');
 const claudeHookEntry = require('./connectors/claude-code/hook-entry');
@@ -68,6 +69,7 @@ module.exports = {
   normalizeCodex,
   normalizeOpenCode,
   projectRegistry,
+  commitProjection,
   journalFor,
   globalJournalDir,
   projectJournalDir,

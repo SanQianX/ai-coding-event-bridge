@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { writeJsonAtomicSync, readJsonIfExists, ensureDirSync } = require('./fs-utils');
 const { CrossProcessLock } = require('./lock');
-const { resolveRepoContext, comparisonForm } = require('./repo-context');
+const { resolveRepoContext, comparisonForm, repoIdentityKey } = require('./repo-context');
 
 const REGISTRY_VERSION = 1;
 
@@ -155,11 +155,22 @@ function listProjects(home) {
   return loadRegistry(home).projects.map((project) => ({ ...project }));
 }
 
+// Registry lookup by capture identity (repoIdentity.workspaceId, or the
+// identity string itself for legacy records): the same rule journal routing
+// uses to pick a project's journal.
+function findProject(home, repoIdentity) {
+  const key = repoIdentityKey(repoIdentity);
+  if (!key) return null;
+  const project = loadRegistry(home).projects.find((candidate) => candidate.id === key);
+  return project ? { ...project } : null;
+}
+
 module.exports = {
   REGISTRY_VERSION,
   registryFile,
   loadRegistry,
   addProject,
   removeProject,
-  listProjects
+  listProjects,
+  findProject
 };

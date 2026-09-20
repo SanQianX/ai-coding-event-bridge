@@ -32,6 +32,7 @@ const BOUNDARY_FACT_FIELDS = [
   'commitSha',
   'parents',
   'branch',
+  'subject',
   'committedAt',
   'projectId',
   'operationId'
@@ -466,6 +467,34 @@ class Journal {
     this._state.bytesFlushed = fs.statSync(this.eventsFile).size;
     this._saveState();
     return removedCount;
+  }
+
+  /**
+   * Drop the durable prefix through `target` after its conversations were
+   * sealed into <store>/commits (the sealed files are the archive of record).
+   * Turns whose events fell below the trim point leave the open-turn state:
+   * a reply that arrives later lands as an orphan assistant event and is
+   * sealed into the next commit's 未配对事件 appendix by design.
+   */
+  async trimThrough(target) {
+    if (!Number.isInteger(target) || target < 0) {
+      throw new JournalValidationError('trimThrough requires a non-negative integer sequence');
+    }
+    return this._withJournalLock(async () => {
+      if (target < this._state.firstSequence) {
+        return { trimmedThrough: this._state.firstSequence - 1, removedCount: 0, reason: 'already-trimmed' };
+      }
+      const removedCount = this._compactTo(target);
+      let droppedOpenTurns = 0;
+      for (const key of Object.keys(this._state.openTurns)) {
+        if (this._state.openTurns[key].lastSequence <= target) {
+          delete this._state.openTurns[key];
+          droppedOpenTurns += 1;
+        }
+      }
+      if (droppedOpenTurns > 0) this._saveState();
+      return { trimmedThrough: target, removedCount, droppedOpenTurns, reason: 'trimmed' };
+    });
   }
 }
 

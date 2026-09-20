@@ -86,6 +86,14 @@ async function main() {
     identity: contextA.repoIdentity, projectPath: repoA, eventType: 'assistant_response', role: 'assistant',
     content: '导入后的第二答', sessionId: 's-a1', turnId: 't-a2'
   }));
+  await journalA.appendConversationEvent(event({
+    identity: contextA.repoIdentity, projectPath: repoA, eventType: 'user_prompt', role: 'user',
+    content: '导入后的第三问', sessionId: 's-a1', turnId: 't-a3'
+  }));
+  await journalA.appendConversationEvent(event({
+    identity: contextA.repoIdentity, projectPath: repoA, eventType: 'assistant_response', role: 'assistant',
+    content: '导入后的第三答', sessionId: 's-a1', turnId: 't-a3'
+  }));
 
   // Global journal: one legacy turn for repo A (pre-import history) and one for repo B (auto).
   await globalJournal.appendConversationEvent(event({
@@ -133,7 +141,7 @@ async function main() {
     assert.ok(entryA, 'registered project listed');
     assert.strictEqual(entryA.auto, false);
     assert.strictEqual(entryA.store, path.join(storeA, 'journal').replace(path.sep + 'journal', ''), 'store reported');
-    assert.strictEqual(entryA.turns, 3, 'registered project merges project journal (2) + legacy global (1)');
+    assert.strictEqual(entryA.turns, 4, 'registered project counts its journal turns plus legacy global history');
     assert.ok(entryB, 'auto-discovered project listed');
     assert.strictEqual(entryB.auto, true);
     assert.strictEqual(entryB.turns, 2, 'auto project counts global conversation events');
@@ -142,28 +150,31 @@ async function main() {
     const dates = await call('GET', '/api/dates?project=' + encodeURIComponent(idA));
     assert.strictEqual(dates.status, 200);
     assert.strictEqual(dates.payload.dates.length, 1);
-    assert.strictEqual(dates.payload.dates[0].turns, 3);
+    assert.strictEqual(dates.payload.dates[0].turns, 4);
 
-    // ---------- turns: merged across journals, annotations from boundaries ----------
+    // ---------- turns (registered): only the current conversation ----------
+    // The journal is a conveyor: the current view serves the turns that live
+    // after the last commit boundary; earlier conversations are the archive.
     const turns = await call('GET', '/api/turns?project=' + encodeURIComponent(idA));
     assert.strictEqual(turns.status, 200);
-    assert.strictEqual(turns.payload.totalTurns, 3);
+    assert.strictEqual(turns.payload.totalTurns, 2, 'current view = turns after the last boundary');
     const contents = turns.payload.turns.map((t) => t.userEvents[0].content);
-    assert.ok(contents.includes('导入前的历史问题'), 'legacy global turn appears for registered project');
-    assert.ok(contents.includes('导入后的第一问'), 'project journal turn appears');
-    const ann = turns.payload.annotations['t-a1'];
-    assert.ok(ann && ann.commitShas.length === 1 && ann.commitShas[0].startsWith('9f8e7d6'), 'boundary annotates the turn open at commit');
+    assert.ok(contents.includes('导入后的第二问'), 'post-boundary turn appears');
+    assert.ok(contents.includes('导入后的第三问'), 'the newest turn appears');
+    assert.ok(!contents.includes('导入前的历史问题'), 'legacy global history is not the current conversation');
+    assert.ok(!contents.includes('导入后的第一问'), 'the turn from before the boundary left the current view');
+    assert.deepStrictEqual(turns.payload.annotations, {}, 'current view carries no commit annotations');
 
     // chronological order
     const times = turns.payload.turns.map((t) => t.userEvents[0].capturedAt);
     const sorted = [...times].sort();
-    assert.deepStrictEqual(times, sorted, 'merged turns are chronologically ordered');
+    assert.deepStrictEqual(times, sorted, 'current turns are chronologically ordered');
 
     // ---------- cursor pagination ----------
-    const page1 = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&limit=2');
-    assert.strictEqual(page1.payload.turns.length, 2);
+    const page1 = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&limit=1');
+    assert.strictEqual(page1.payload.turns.length, 1);
     assert.ok(page1.payload.nextCursor);
-    const page2 = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&limit=2&cursor=' + encodeURIComponent(page1.payload.nextCursor));
+    const page2 = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&limit=1&cursor=' + encodeURIComponent(page1.payload.nextCursor));
     assert.strictEqual(page2.payload.turns.length, 1);
     assert.strictEqual(page2.payload.nextCursor, null);
     const badCursor = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&cursor=not-a-cursor');
@@ -178,6 +189,66 @@ async function main() {
 
     const missing = await call('GET', '/api/turns?project=sha256:deadbeef');
     assert.strictEqual(missing.status, 404);
+
+    // ---------- commit documents: list + lazy single-doc fetch ----------
+    const commitsDir = path.join(storeA, 'commits');
+    fs.mkdirSync(commitsDir, { recursive: true });
+    const docSha = '9f8e7d6a1b2c3d4e5f60718293a4b5c6d7e8f90a';
+    fs.writeFileSync(path.join(commitsDir, `${docSha}.md`), [
+      '---',
+      `commitSha: ${docSha}`,
+      "subject: 'feat: sealed doc listing'",
+      'branch: main',
+      "committedAt: '2026-09-19T22:35:00Z'",
+      'turnCount: 2',
+      'unpairedEventCount: 0',
+      '---',
+      '',
+      '## Turn 1 — 2026-09-19 22:33 (t-a1, exact)',
+      '',
+      '### 用户',
+      '',
+      '```',
+      '导入后的第一问',
+      '```',
+      ''
+    ].join('\n'));
+    fs.writeFileSync(path.join(commitsDir, '2026-01-02-uncommitted-9.md'), [
+      '---',
+      'subject: 未提交的对话',
+      'uncommitted: true',
+      "sealedAt: '2026-01-02T10:00:00Z'",
+      'turnCount: 1',
+      '---',
+      ''
+    ].join('\n'));
+
+    const commitList = await call('GET', '/api/commits?project=' + encodeURIComponent(idA));
+    assert.strictEqual(commitList.status, 200);
+    assert.strictEqual(commitList.payload.commits.length, 2, 'both sealed docs are listed');
+    const listed = commitList.payload.commits[0];
+    assert.strictEqual(listed.subject, 'feat: sealed doc listing', 'frontmatter subject surfaces (newest first)');
+    assert.strictEqual(listed.sha, docSha);
+    assert.strictEqual(listed.uncommitted, false);
+    const listedFuse = commitList.payload.commits[1];
+    assert.strictEqual(listedFuse.uncommitted, true, 'uncommitted docs are flagged');
+    assert.strictEqual(listedFuse.subject, '未提交的对话');
+
+    const doc = await fetch(BASE.url + '/api/commits/' + docSha + '.md?project=' + encodeURIComponent(idA));
+    assert.strictEqual(doc.status, 200);
+    assert.match(doc.headers.get('content-type') || '', /text\/markdown/);
+    assert.ok((await doc.text()).includes('导入后的第一问'), 'document body serves');
+
+    const docMissing = await call('GET', '/api/commits/' + 'f'.repeat(40) + '.md?project=' + encodeURIComponent(idA));
+    assert.strictEqual(docMissing.status, 404, 'unknown document 404s');
+    const docNoProject = await call('GET', '/api/commits/' + docSha + '.md');
+    assert.strictEqual(docNoProject.status, 404, 'document fetch without project 404s');
+    const docInvalid = await call('GET', '/api/commits/evil_name.md?project=' + encodeURIComponent(idA));
+    assert.strictEqual(docInvalid.status, 400, 'names the sealer could not produce are rejected');
+    const commitsB = await call('GET', '/api/commits?project=' + encodeURIComponent(idB));
+    assert.strictEqual(commitsB.payload.commits.length, 0, 'auto projects have no archive');
+    const docB = await call('GET', '/api/commits/' + docSha + '.md?project=' + encodeURIComponent(idB));
+    assert.strictEqual(docB.status, 404, 'auto projects cannot fetch documents');
 
     // ---------- import validation ----------
     const noDir = await call('POST', '/api/projects', { path: path.join(HOME, 'missing') });

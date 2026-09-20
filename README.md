@@ -50,7 +50,34 @@ chosen storage root). Capture routes each event to
 `<store>/journal` when its repo identity matches a registration, and to the
 global `<home>/journal` otherwise — registry failures never block capture.
 Consumer-cursor compaction applies to the global journal only; project
-journals are archival stores.
+journals are archival stores. The recommended store layout is
+`knowledge/<project>/dev-conversations` (see "Commit sealing" below).
+
+## Commit sealing
+
+When a commit boundary lands in a registered project's journal, the bridge
+freezes that commit's conversations into a human-readable Markdown file at
+`<store>/commits/<full-sha>.md` (YAML frontmatter with commit facts and a
+provenance `contentHash`, then per-turn 用户/助手 bodies). Turns still open
+at commit time are included — the user's ask is the requirement truth for
+that commit; a reply that arrives after the commit seals into the next file
+as an 未配对事件 appendix, so no conversation body is ever dropped.
+Commits without conversations produce no file; amending produces a new file
+and leaves the old one as immutable evidence. Sealing is a rebuildable
+projection: `commitProjection.rebuildSealedFiles()` recreates any missing
+file from the journal, and a sealing failure never fails the boundary
+append (it is reported in `appendCommitBoundary(...).projection`).
+
+Hosts signal commits through the facade (`appendCommitBoundary`) or the CLI:
+
+```bash
+node packages/core/src/bin/commit-boundary.js --cwd <repo> [--home <bridge home>]
+```
+
+The CLI resolves the repo identity from the working tree, reads HEAD facts
+from git, and prints one JSON line — designed to be called from a managed
+git post-commit hook. `node packages/core/examples/seal-demo.js` demos the
+whole flow standalone.
 
 ## Development
 

@@ -39,6 +39,19 @@ function writeJsonAtomicSync(file, value) {
   fsyncDir(path.dirname(file));
 }
 
+function writeTextAtomicSync(file, text) {
+  const tmp = `${file}.tmp`;
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, text);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, file);
+  fsyncDir(path.dirname(file));
+}
+
 function readJsonIfExists(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -65,4 +78,4 @@ function copyDirSync(src, dest) {
   }
 }
 
-module.exports = { fsyncDir, appendLineSync, writeJsonAtomicSync, readJsonIfExists, ensureDirSync, copyDirSync };
+module.exports = { fsyncDir, appendLineSync, writeJsonAtomicSync, writeTextAtomicSync, readJsonIfExists, ensureDirSync, copyDirSync };

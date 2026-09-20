@@ -1,7 +1,7 @@
 {
   "name": "@sanqianx/ai-coding-event-bridge",
-  "version": "0.2.0",
-  "description": "Durable AI coding event capture bridge core: connectors (Claude Code, Codex, OpenCode, ZCode), normalizer, journal, commit boundaries, consumer cursors and headless conversation query.",
+  "version": "0.4.0",
+  "description": "Durable AI coding event capture bridge core: connectors (Claude Code, Codex, OpenCode, ZCode), normalizer, journal, commit boundaries, consumer cursors, headless conversation query and per-commit conversation sealing.",
   "license": "MIT",
   "private": false,
   "repository": {
@@ -10,6 +10,9 @@
     "directory": "packages/core"
   },
   "main": "src/index.js",
+  "bin": {
+    "bridge-commit-boundary": "src/bin/commit-boundary.js"
+  },
   "engines": {
     "node": ">=18"
   },

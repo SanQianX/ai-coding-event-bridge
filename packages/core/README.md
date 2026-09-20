@@ -21,3 +21,49 @@ subdirectory resolves to the repo root. Host boundaries appended through the
 bridge facade follow the same routing; when a boundary lands in a project
 journal, the returned `bridgeCursorAtCommit` stays at the global journal's
 last sequence so consumer watermarks never skip unseen global content.
+
+## Per-commit conversation sealing
+
+`commitProjection` (`sealCommitConversations` / `rebuildSealedFiles` /
+`sealDirFor`) turns a routed journal into a per-commit archive: when
+`appendCommitBoundary` lands in a registered project's journal, the
+conversations belonging to that commit are frozen into
+`<store>/commits/<full-sha>.md` — Markdown with YAML frontmatter (commit
+facts, boundary sequences, a provenance `contentHash`) followed by per-turn
+用户/助手 bodies. Belongs-to rule: events between this boundary and the
+repo's previous one, plus every turn still open at commit time
+(`openTurnIdsAtCommit` — the ask is the requirement truth even before the
+reply arrives). Window events that no turn consumed (a late reply) render
+as an 未配对事件 appendix so every body lands in at least one file. Commits
+without conversations seal nothing; the same sha never rewrites (amend gets
+its own file, the old one stays as immutable evidence); `sealedAt` derives
+from persisted boundary facts, so rebuilds are byte-stable. Projection
+failures are reported in the facade result's `projection` field and never
+fail the boundary append — the journal remains the only source of truth.
+
+`src/bin/commit-boundary.js` (npm bin `bridge-commit-boundary`) is the
+signal-injection entry: `--cwd <repo> [--home ...] [--sha] [--branch]`
+resolves the repo identity from the working tree, reads HEAD facts from
+git, appends the boundary and prints one JSON line — the shape a managed
+git post-commit hook calls. `examples/seal-demo.js` runs the full flow
+standalone in a temp directory.
+
+### Journal as a conveyor (trim after seal)
+
+For registered projects the journal is a conveyor, not an archive: once a
+boundary's seal verifiably exists on disk, `appendCommitBoundary` trims the
+journal through that sequence (`journal.trimThrough` also retires open-turn
+state whose events fell below the watermark). A reply that arrives after the
+trim lands as an orphan assistant event and seals into the next commit's
+未配对事件 appendix, so no conversation body is ever dropped. If sealing
+fails, the prefix stays and the next boundary's seal window covers it
+(self-healing). `sealUncommittedTail` is the age fuse: conversations still
+uncommitted after `maxAgeDays` (default 14) are sealed into
+`commits/<day>-uncommitted-<seq>.md` and trimmed. `reconcileTrim` is the
+boot-time check that trims through the newest boundary whose sealed file
+exists — run it (like the console does at startup) to adopt pre-upgrade
+journals or heal a crash between sealing and trimming.
+
+**Warning**: after a trim, `commits/*.md` is the only copy of that span.
+`rebuildSealedFiles` covers the untrimmed remainder only; treat the sealed
+files (and their backups) as the archive of record.

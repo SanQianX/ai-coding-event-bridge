@@ -7,6 +7,8 @@ const { Journal } = require('./journal');
 const { ConsumerRegistry } = require('./consumer-registry');
 const { compactJournal } = require('./compaction');
 const { journalFor, globalJournalDir } = require('./journal-router');
+const projectRegistry = require('./project-registry');
+const { sealCommitConversations, sealDirFor } = require('./commit-projection');
 
 /**
  * Stable host-facing facade over the Bridge runtime. Hosts (Project-Knowledge,
@@ -50,7 +52,7 @@ function createBridge({ homeDir } = {}) {
       return getJournal().appendConversationEvent(event);
     },
 
-    async appendCommitBoundary({ projectId, repoIdentity, commitSha, parentShas, parents, branch, committedAt, operationId, meta } = {}) {
+    async appendCommitBoundary({ projectId, repoIdentity, commitSha, parentShas, parents, branch, subject, committedAt, operationId, meta } = {}) {
       if (!repoIdentity) {
         throw new Error('appendCommitBoundary requires repoIdentity');
       }
@@ -61,25 +63,63 @@ function createBridge({ homeDir } = {}) {
         commitSha,
         parents: parents !== undefined ? parents : parentShas,
         branch,
+        subject,
         committedAt,
         projectId,
         operationId,
         meta
       });
+      const routed = journal.journalDir !== globalJournalDir(home);
       let bridgeCursorAtCommit = result.sequence;
-      if (journal.journalDir !== globalJournalDir(home)) {
+      if (routed) {
         // Routed to a registered project's journal: the boundary is not in the
         // global journal, so the global consumer watermark is unchanged. Keep
         // the returned cursor conservative (never past unseen global content).
         const bounds = await getJournal().getBounds();
         bridgeCursorAtCommit = bounds.lastSequence;
       }
+      // A routed boundary means a registered project just committed: freeze
+      // that commit's conversations into <store>/commits/<sha>.md. Projection
+      // failures are reported, never thrown — the journal remains the only
+      // source of truth and the boundary is already durable.
+      let projection = { sealed: false, turnCount: 0, reason: routed ? 'project-not-registered' : 'global-journal' };
+      if (routed) {
+        try {
+          const project = projectRegistry.findProject(home, repoIdentity);
+          if (project) {
+            const sealDir = sealDirFor(project.store);
+            projection = await sealCommitConversations({
+              journal,
+              sealDir,
+              boundary: {
+                commitSha,
+                branch,
+                subject,
+                committedAt,
+                sequence: result.sequence,
+                openTurnIdsAtCommit: result.openTurnIdsAtCommit,
+                previousRepoBoundarySequence: result.previousRepoBoundarySequence
+              }
+            });
+            // The journal is a conveyor: once the archive copy verifiably
+            // exists on disk, drop the sealed prefix. On any miss the prefix
+            // stays and the next boundary's seal window covers it (self-heal).
+            if (projection.sealed || (projection.reason === 'already-sealed' && fs.existsSync(projection.path))) {
+              const trim = await journal.trimThrough(result.sequence);
+              projection.trimmedThrough = trim.trimmedThrough;
+            }
+          }
+        } catch (err) {
+          projection = { sealed: false, turnCount: 0, error: err && err.message ? err.message : String(err) };
+        }
+      }
       return {
         sequence: result.sequence,
         bridgeCursorAtCommit,
         openTurnIdsAtCommit: result.openTurnIdsAtCommit,
         previousRepoBoundarySequence: result.previousRepoBoundarySequence,
-        committedAt: committedAt || new Date().toISOString()
+        committedAt: committedAt || new Date().toISOString(),
+        projection
       };
     },
 
