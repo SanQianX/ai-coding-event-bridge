@@ -43,6 +43,8 @@
 
   #app { flex: 1; display: flex; min-height: 0; }
   aside { width: 248px; min-width: 248px; background: var(--bg-side); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+  /* 嵌入壳（?embed=1）时由 kb:sidebar 控制项目侧栏的显隐 */
+  body.embed-collapse aside { display: none; }
   .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
   .brand .mark { width: 22px; height: 22px; border-radius: 6px; background: var(--text); color: #16171a; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
   .brand .name { font-size: 13px; font-weight: 600; }
@@ -892,6 +894,28 @@ function renderSettings() {
 loadHealth();
 loadProjects();
 setInterval(loadHealth, 30000);
+
+/* ---------- embed bridge（被外部壳嵌入时受控） ----------
+ * 壳 postMessage：{type:'kb:sidebar', visible} 折叠/展开项目侧栏。
+ * URL 参数：?embed=1 进入嵌入态（默认折叠，sidebar=1 保持展开）。
+ * 就绪后回发 {type:'kb:ready', app:'event-bridge'}；独立打开时不受控、侧栏恒显。 */
+function embedAllowedOrigin(origin) {
+  if (origin === 'null') return true; // file:// 壳
+  try { const u = new URL(origin); return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]'; }
+  catch { return false; }
+}
+function setEmbedSideVisible(visible) { document.body.classList.toggle('embed-collapse', !visible); }
+window.addEventListener('message', function (ev) {
+  if (!embedAllowedOrigin(ev.origin)) return;
+  const d = ev.data;
+  if (!d || typeof d !== 'object') return;
+  if (d.type === 'kb:sidebar') setEmbedSideVisible(!!d.visible);
+});
+(function () {
+  const q = new URLSearchParams(location.search);
+  if (q.get('embed') === '1') setEmbedSideVisible(q.get('sidebar') !== '1');
+  if (window.parent !== window) window.parent.postMessage({ type: 'kb:ready', app: 'event-bridge' }, '*');
+})();
 </script>
 </body>
 </html>
