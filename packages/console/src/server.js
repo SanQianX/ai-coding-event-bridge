@@ -314,8 +314,14 @@ function createConsoleServer({ home }) {
         });
         return;
       }
+      // Optional `win=x,y,w,h` anchors the dialog on the calling browser
+      // window (unified picker contract).
+      const parts = (url.searchParams.get('win') || '').split(',').map(Number);
+      const windowRect = parts.length === 4 && parts.every(Number.isFinite)
+        ? { x: parts[0], y: parts[1], width: parts[2], height: parts[3] }
+        : undefined;
       try {
-        const picked = await pickFolder();
+        const picked = await pickFolder({ title: '选择项目文件夹', windowRect });
         sendJson(res, 200, picked);
       } catch (err) {
         const status = (err && err.status) || 500;

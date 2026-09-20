@@ -4,6 +4,7 @@
 const http = require('http');
 const { bridgeHome } = require('@sanqianx/ai-coding-event-bridge');
 const { createConsoleServer } = require('./server');
+const { warmFolderPicker } = require('./pick-folder');
 
 /**
  * ai-coding-event-bridge-console CLI
@@ -38,6 +39,12 @@ async function main() {
   console.log(`  home: ${home}`);
   console.log(`  import projects from the sidebar; conversations of imported`);
   console.log(`  projects are stored per-project under their chosen store.`);
+  // Compile the folder-picker helper up front so the first "browse…" click
+  // pops the dialog in milliseconds instead of paying the powershell +
+  // Add-Type startup. Never blocks or crashes the console.
+  if (process.env.BRIDGE_CONSOLE_PICK_FOLDER !== '0') {
+    warmFolderPicker({ title: '选择项目文件夹' }).catch(() => {});
+  }
 }
 
 main().catch((err) => {
