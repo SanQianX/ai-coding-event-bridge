@@ -495,6 +495,7 @@ function fetchTurns(options) {
   if (!append) { state.turns = []; state.cursor = null; }
   renderLive();
   var query = '/api/turns?project=' + encodeURIComponent(state.project.id)
+    + '&order=desc'
     + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
   return api(query).then(function (payload) {
     if (!state.project || payload.project !== state.project.id) return; // 切换已发生，丢弃过期响应

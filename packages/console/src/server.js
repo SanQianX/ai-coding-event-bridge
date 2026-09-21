@@ -60,6 +60,16 @@ function decodeCursor(raw) {
   return null;
 }
 
+function decodeSeqCursor(raw) {
+  try {
+    const decoded = JSON.parse(Buffer.from(String(raw), 'base64url').toString('utf8'));
+    if (decoded && decoded.v === 1 && typeof decoded.seq === 'number') return decoded;
+  } catch (_) {
+    // fall through
+  }
+  return null;
+}
+
 function pickFolderEnabled() {
   return process.env.BRIDGE_CONSOLE_PICK_FOLDER !== '0';
 }
@@ -294,7 +304,7 @@ function createConsoleServer({ home }) {
    * project journal after its last commit boundary. Everything earlier is
    * archived under <store>/commits and served by the commit-doc endpoints.
    */
-  async function currentTurns(project, { limit, cursorRaw }) {
+  async function currentTurns(project, { limit, cursorRaw, order }) {
     const dir = projectJournalDir(project);
     const journal = existingJournal(dir);
     if (!journal) {
@@ -307,24 +317,43 @@ function createConsoleServer({ home }) {
     const records = await journal.readEvents({ fromSequence: lastBoundary + 1 });
     const turns = queryAt(dir)._projectTurns(records.filter(isConversationEvent));
     turns.sort((a, b) => a.startSequence - b.startSequence);
-    let start = 0;
-    if (cursorRaw) {
-      let decoded = null;
-      try {
-        decoded = JSON.parse(Buffer.from(String(cursorRaw), 'base64url').toString('utf8'));
-      } catch (_) {
-        decoded = null;
+    let pageAsc;
+    let nextCursor = null;
+    if (order === 'desc') {
+      // Newest on top: page 1 holds the newest turns; each cursor step pages
+      // further into the past.
+      let start;
+      if (cursorRaw) {
+        const decoded = decodeSeqCursor(cursorRaw);
+        if (!decoded || (decoded.o && decoded.o !== 'desc')) return null;
+        start = turns.findIndex((turn) => turn.startSequence < decoded.seq);
+        if (start === -1) start = turns.length;
+      } else {
+        start = Math.max(0, turns.length - limit);
       }
-      if (!decoded || decoded.v !== 1 || typeof decoded.seq !== 'number') return null;
-      start = turns.findIndex((turn) => turn.startSequence > decoded.seq);
-      if (start === -1) start = turns.length;
+      pageAsc = turns.slice(start, start + limit);
+      if (start > 0) {
+        nextCursor = encodeCursor({ v: 1, seq: turns[start].startSequence, o: 'desc' });
+      }
+    } else {
+      let start = 0;
+      if (cursorRaw) {
+        const decoded = decodeSeqCursor(cursorRaw);
+        if (!decoded || (decoded.o && decoded.o !== 'asc')) return null;
+        start = turns.findIndex((turn) => turn.startSequence > decoded.seq);
+        if (start === -1) start = turns.length;
+      }
+      pageAsc = turns.slice(start, start + limit);
+      if (start + limit < turns.length && pageAsc.length) {
+        nextCursor = encodeCursor({ v: 1, seq: pageAsc[pageAsc.length - 1].startSequence, o: 'asc' });
+      }
     }
-    const page = turns.slice(start, start + limit);
+    const page = order === 'desc' ? pageAsc.slice().reverse() : pageAsc;
     return {
       project: project.id,
       date: null,
       turns: page,
-      nextCursor: start + limit < turns.length && page.length ? encodeCursor({ v: 1, seq: page[page.length - 1].startSequence }) : null,
+      nextCursor,
       totalTurns: turns.length,
       annotations: {}
     };
@@ -618,11 +647,12 @@ function createConsoleServer({ home }) {
 
       if (route === 'GET /api/turns') {
         const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit')) || 50, 200));
+        const order = url.searchParams.get('order') === 'desc' ? 'desc' : 'asc';
         if (!project.auto) {
           // Registered projects: the journal is a conveyor — serve only the
           // current (uncommitted) conversation and keep it maintained.
           await maintainProject(project);
-          const current = await currentTurns(project, { limit, cursorRaw: url.searchParams.get('cursor') });
+          const current = await currentTurns(project, { limit, cursorRaw: url.searchParams.get('cursor'), order });
           if (!current) {
             sendJson(res, 400, { error: { code: 'CURSOR_INVALID', message: 'cursor is invalid; restart the query' } });
             return;
@@ -633,22 +663,49 @@ function createConsoleServer({ home }) {
         const date = url.searchParams.get('date') || null;
         const merged = await mergedTurns(project, { date });
         const cursor = url.searchParams.get('cursor');
-        let start = 0;
-        if (cursor) {
-          const decoded = decodeCursor(cursor);
-          if (!decoded) {
-            sendJson(res, 400, { error: { code: 'CURSOR_INVALID', message: 'cursor is invalid; restart the query' } });
-            return;
+        let pageAsc;
+        let nextCursor = null;
+        if (order === 'desc') {
+          // Newest on top: page 1 holds the newest turns; each cursor step
+          // pages further into the past.
+          let start;
+          if (cursor) {
+            const decoded = decodeCursor(cursor);
+            if (!decoded || (decoded.o && decoded.o !== 'desc')) {
+              sendJson(res, 400, { error: { code: 'CURSOR_INVALID', message: 'cursor is invalid; restart the query' } });
+              return;
+            }
+            start = merged.findIndex((turn) => turnSortKey(turn) < decoded.key);
+            if (start === -1) start = merged.length;
+          } else {
+            start = Math.max(0, merged.length - limit);
           }
-          start = merged.findIndex((turn) => turnSortKey(turn) > decoded.key);
-          if (start === -1) start = merged.length;
+          pageAsc = merged.slice(start, start + limit);
+          if (start > 0) {
+            nextCursor = encodeCursor({ v: 1, key: turnSortKey(merged[start]), o: 'desc' });
+          }
+        } else {
+          let start = 0;
+          if (cursor) {
+            const decoded = decodeCursor(cursor);
+            if (!decoded || (decoded.o && decoded.o !== 'asc')) {
+              sendJson(res, 400, { error: { code: 'CURSOR_INVALID', message: 'cursor is invalid; restart the query' } });
+              return;
+            }
+            start = merged.findIndex((turn) => turnSortKey(turn) > decoded.key);
+            if (start === -1) start = merged.length;
+          }
+          pageAsc = merged.slice(start, start + limit);
+          if (start + limit < merged.length && pageAsc.length) {
+            nextCursor = encodeCursor({ v: 1, key: turnSortKey(pageAsc[pageAsc.length - 1]), o: 'asc' });
+          }
         }
-        const page = merged.slice(start, start + limit);
+        const page = order === 'desc' ? pageAsc.slice().reverse() : pageAsc;
         sendJson(res, 200, {
           project: project.id,
           date,
           turns: page,
-          nextCursor: start + limit < merged.length ? encodeCursor({ v: 1, key: turnSortKey(merged[start + limit - 1]) }) : null,
+          nextCursor,
           totalTurns: merged.length,
           annotations: await annotationsFor(project, page)
         });

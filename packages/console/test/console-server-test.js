@@ -180,6 +180,25 @@ async function main() {
     const badCursor = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&cursor=not-a-cursor');
     assert.strictEqual(badCursor.status, 400);
 
+    // ---------- newest-first order (desc): newest turn on top, paging toward older ----------
+    const desc = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&order=desc');
+    assert.strictEqual(desc.status, 200);
+    assert.strictEqual(desc.payload.totalTurns, 2);
+    assert.strictEqual(desc.payload.turns[0].userEvents[0].content, '导入后的第三问', 'the newest turn comes first');
+    assert.strictEqual(desc.payload.turns[1].userEvents[0].content, '导入后的第二问');
+    const descTimes = desc.payload.turns.map((t) => t.userEvents[0].capturedAt);
+    assert.deepStrictEqual(descTimes, [...descTimes].sort().reverse(), 'desc order is newest-first');
+    const descPage1 = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&order=desc&limit=1');
+    assert.strictEqual(descPage1.payload.turns[0].userEvents[0].content, '导入后的第三问', 'desc page 1 starts at the newest turn');
+    assert.ok(descPage1.payload.nextCursor);
+    const descPage2 = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&order=desc&limit=1&cursor=' + encodeURIComponent(descPage1.payload.nextCursor));
+    assert.strictEqual(descPage2.payload.turns[0].userEvents[0].content, '导入后的第二问', 'desc page 2 continues into the past');
+    assert.strictEqual(descPage2.payload.nextCursor, null);
+    const mixedCursor = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&order=desc&cursor=' + encodeURIComponent(page1.payload.nextCursor));
+    assert.strictEqual(mixedCursor.status, 400, 'an asc cursor is rejected under order=desc');
+    const descDefaultCursor = await call('GET', '/api/turns?project=' + encodeURIComponent(idA) + '&cursor=' + encodeURIComponent(descPage1.payload.nextCursor));
+    assert.strictEqual(descDefaultCursor.status, 400, 'a desc cursor is rejected under the default asc order');
+
     // ---------- auto project & search ----------
     const turnsB = await call('GET', '/api/turns?project=' + encodeURIComponent(idB));
     assert.strictEqual(turnsB.payload.totalTurns, 1);
