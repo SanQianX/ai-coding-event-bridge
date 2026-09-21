@@ -5,7 +5,7 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
-const core = require('@sanqianx/ai-coding-event-bridge');
+const core = require('../src/bridge');
 const { createConsoleServer } = require('../src/server');
 const { detectAgents } = require('../src/agent-detect');
 

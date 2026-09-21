@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const core = require('@sanqianx/ai-coding-event-bridge');
+const core = require('./bridge');
 
 /**
  * Detection of AI coding agent tools on this machine. "Installed" means the

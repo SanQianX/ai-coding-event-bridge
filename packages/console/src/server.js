@@ -13,10 +13,10 @@ const {
   globalJournalDir,
   projectJournalDir,
   repoIdentityKey
-} = require('@sanqianx/ai-coding-event-bridge');
+} = require('./bridge');
 const { pickFolder } = require('./pick-folder');
 const { detectAgents } = require('./agent-detect');
-const corePackage = require('@sanqianx/ai-coding-event-bridge/package.json');
+const corePackage = require('../package.json');
 
 const BOUNDARY_SCHEMA = 'git-commit-boundary/v1';
 const EVENT_SCHEMA = 'ai-coding-event/v1';

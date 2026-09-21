@@ -10,7 +10,7 @@ const {
   Journal,
   resolveRepoContext,
   projectRegistry
-} = require('@sanqianx/ai-coding-event-bridge');
+} = require('../src/bridge');
 const { createConsoleServer } = require('../src/server');
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-console-server-'));

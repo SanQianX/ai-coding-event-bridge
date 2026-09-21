@@ -1,4 +1,4 @@
-name: Publish packages
+name: Publish package
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   verify-and-publish:
-    name: Verify SHA and publish core + ui
+    name: Verify SHA and publish the console package
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -35,24 +35,19 @@ jobs:
         with:
           node-version: '24.x'
           registry-url: https://registry.npmjs.org
-      - name: Verify declared version matches package manifests
+      - name: Verify declared version matches package manifest
         shell: bash
         run: |
           set -euo pipefail
           declared="${{ inputs.version }}"
-          core=$(node -p "require('./packages/core/package.json').version")
-          ui=$(node -p "require('./packages/ui/package.json').version")
-          if [ "$declared" != "$core" ] || [ "$declared" != "$ui" ]; then
-            echo "Refusing to publish: version inputs ($declared) differ from core ($core) / ui ($ui)."
+          current=$(node -p "require('./packages/console/package.json').version")
+          if [ "$declared" != "$current" ]; then
+            echo "Refusing to publish: version input ($declared) differs from the manifest ($current)."
             exit 1
           fi
       - run: npm ci
       - run: npm test
-      - name: Publish core with provenance
-        run: npm publish --workspace packages/core --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
-      - name: Publish ui with provenance
-        run: npm publish --workspace packages/ui --provenance --access public
+      - name: Publish with provenance
+        run: npm publish --workspace packages/console --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

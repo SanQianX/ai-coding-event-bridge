@@ -2,16 +2,20 @@
 'use strict';
 
 const http = require('http');
-const { bridgeHome } = require('@sanqianx/ai-coding-event-bridge');
+const { bridgeHome } = require('./bridge');
 const { createConsoleServer } = require('./server');
 const { warmFolderPicker } = require('./pick-folder');
 
 /**
- * ai-coding-event-bridge-console CLI (also reachable as
- * `ai-coding-event-bridge serve` via the core package's dispatcher).
+ * ai-coding-event-bridge-console CLI — the single package of this project.
  *
  *   serve [--port 8790] [--host 127.0.0.1] [--home DIR]
  *         Start the local console (explorer page + JSON API).
+ *
+ *   commit-boundary [--cwd <repo>] [--home DIR] [--sha] [--branch]
+ *                   [--committed-at ISO] [--subject TEXT]
+ *       Append one commit boundary event — the call a managed git
+ *       post-commit hook makes.
  *
  * The server binds to localhost by default: journals contain full
  * conversation bodies, so they stay on this machine unless --host says
@@ -24,8 +28,23 @@ async function main(argv = process.argv.slice(2)) {
     return i >= 0 ? argv[i + 1] : undefined;
   };
 
+  if (command === 'commit-boundary') {
+    // The boundary entry reads its own flags from process.argv; the extra
+    // positional is ignored by its --flag lookup. The contract is one JSON
+    // line (ok:true/false) on stdout, preserved even when required from here.
+    await require('./bridge/bin/commit-boundary').main().catch((err) => {
+      process.stderr.write(`${JSON.stringify({ ok: false, error: err && err.message ? err.message : String(err) })}\n`);
+      process.exitCode = 1;
+    });
+    return;
+  }
+
   if (command !== 'serve') {
-    console.log('Usage: ai-coding-event-bridge-console serve [--port 8790] [--host 127.0.0.1] [--home DIR]');
+    console.log('Usage: ai-coding-event-bridge-console <command> [options]');
+    console.log('  serve            Start the local console (explorer page + JSON API)');
+    console.log('                     --port 8790  --host 127.0.0.1  --home DIR');
+    console.log('  commit-boundary  Append one commit boundary event (git post-commit hooks)');
+    console.log('                     --cwd <repo>  --home DIR  --sha  --branch');
     process.exitCode = command ? 1 : 0;
     return;
   }
