@@ -27,6 +27,22 @@ npm install
 npm run serve            # http://127.0.0.1:8790 (localhost-only by default)
 ```
 
+Or from npm — every package publishes a command named after itself (npm's
+default bin rule, scope stripped):
+
+```bash
+npm install -g @sanqianx/ai-coding-event-bridge-console
+ai-coding-event-bridge-console serve      # http://127.0.0.1:8790
+
+# or, without installing:
+npx @sanqianx/ai-coding-event-bridge-console serve
+```
+
+Installing the core package instead gives you the `ai-coding-event-bridge`
+dispatcher, which can also start the console when the console package is
+present (`ai-coding-event-bridge serve`) and inject commit boundaries
+(`ai-coding-event-bridge commit-boundary --cwd <repo>`).
+
 Import a project from the sidebar (native folder picker on Windows); its
 conversations and commit boundaries are then stored under the chosen address
 (`<store>/journal`) instead of the global journal. Repos captured before being
@@ -72,6 +88,8 @@ Hosts signal commits through the facade (`appendCommitBoundary`) or the CLI:
 
 ```bash
 node packages/core/src/bin/commit-boundary.js --cwd <repo> [--home <bridge home>]
+# equivalently, once @sanqianx/ai-coding-event-bridge is installed:
+ai-coding-event-bridge commit-boundary --cwd <repo> [--home <bridge home>]
 ```
 
 The CLI resolves the repo identity from the working tree, reads HEAD facts

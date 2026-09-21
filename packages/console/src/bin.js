@@ -7,7 +7,8 @@ const { createConsoleServer } = require('./server');
 const { warmFolderPicker } = require('./pick-folder');
 
 /**
- * ai-coding-event-bridge-console CLI
+ * ai-coding-event-bridge-console CLI (also reachable as
+ * `ai-coding-event-bridge serve` via the core package's dispatcher).
  *
  *   serve [--port 8790] [--host 127.0.0.1] [--home DIR]
  *         Start the local console (explorer page + JSON API).
@@ -16,8 +17,7 @@ const { warmFolderPicker } = require('./pick-folder');
  * conversation bodies, so they stay on this machine unless --host says
  * otherwise.
  */
-async function main() {
-  const argv = process.argv.slice(2);
+async function main(argv = process.argv.slice(2)) {
   const command = argv[0];
   const get = (name) => {
     const i = argv.indexOf('--' + name);
@@ -47,7 +47,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err && err.stack ? err.stack : err);
-  process.exit(1);
-});
+module.exports = { main };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err && err.stack ? err.stack : err);
+    process.exit(1);
+  });
+}

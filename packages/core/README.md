@@ -48,6 +48,22 @@ git, appends the boundary and prints one JSON line — the shape a managed
 git post-commit hook calls. `examples/seal-demo.js` runs the full flow
 standalone in a temp directory.
 
+### CLI
+
+Since 0.5.0 the package also publishes a dispatcher named after itself
+(npm's default bin rule: command name = package name, scope stripped):
+
+```bash
+ai-coding-event-bridge commit-boundary --cwd <repo> [--home DIR]   # same as above
+ai-coding-event-bridge serve [--port 8790] [--host 127.0.0.1]      # delegates to
+                                                                   # the console package
+```
+
+`serve` requires `@sanqianx/ai-coding-event-bridge-console` — installed in
+the same node_modules tree it is used in-process, otherwise the global
+`ai-coding-event-bridge-console` shim is spawned. `bridge-commit-boundary`
+stays as a compatibility alias for hooks written before 0.5.0.
+
 ### Journal as a conveyor (trim after seal)
 
 For registered projects the journal is a conveyor, not an archive: once a

@@ -54,7 +54,11 @@ async function main() {
   process.stdout.write(`${JSON.stringify({ ok: true, projectPath: repo.projectPath, ...result })}\n`);
 }
 
-main().catch((err) => {
-  process.stderr.write(`${JSON.stringify({ ok: false, error: err && err.message ? err.message : String(err) })}\n`);
-  process.exitCode = 1;
-});
+module.exports = { main };
+
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`${JSON.stringify({ ok: false, error: err && err.message ? err.message : String(err) })}\n`);
+    process.exitCode = 1;
+  });
+}
