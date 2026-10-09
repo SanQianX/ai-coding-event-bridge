@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const {
   Journal,
   ConversationQuery,
@@ -14,6 +15,7 @@ const {
   projectJournalDir,
   repoIdentityKey
 } = require('./bridge');
+const { createBridge } = require('./bridge');
 const { pickFolder } = require('./pick-folder');
 const { detectAgents } = require('./agent-detect');
 const corePackage = require('../package.json');
@@ -74,11 +76,12 @@ function pickFolderEnabled() {
   return process.env.BRIDGE_CONSOLE_PICK_FOLDER !== '0';
 }
 
-function createConsoleServer({ home }) {
+function createConsoleServer({ home, runtimeToken }) {
   if (typeof home !== 'string' || !home) {
     throw new Error('createConsoleServer requires an explicit home directory');
   }
   const globalDir = globalJournalDir(home);
+  const bridge = createBridge({ homeDir: home });
   const consolePageFile = path.join(__dirname, '..', 'console', 'index.html');
 
   const journals = new Map();
@@ -283,13 +286,15 @@ function createConsoleServer({ home }) {
     const journal = existingJournal(projectJournalDir(project));
     if (!journal) return;
     const sealDir = sealDirOf(project);
+    const minAck = await new ConsumerRegistry(home).getMinAck({ journalId: project.id });
+    const throughSequence = minAck === null ? Infinity : minAck;
     try {
-      await commitProjection.reconcileTrim({ journal, sealDir });
+      await commitProjection.reconcileTrim({ journal, sealDir, throughSequence });
     } catch (_) {
       // best-effort: the next maintenance pass retries
     }
     try {
-      await commitProjection.sealUncommittedTail({ journal, sealDir });
+      await commitProjection.sealUncommittedTail({ journal, sealDir, throughSequence });
     } catch (_) {
       // best-effort
     }
@@ -441,6 +446,50 @@ function createConsoleServer({ home }) {
 
   async function handleApi(req, res, url) {
     const route = `${req.method} ${url.pathname}`;
+    const journalId = url.searchParams.get('journalId') || 'global';
+
+    if (url.pathname.startsWith('/api/internal/')) {
+      const supplied = String(req.headers.authorization || '').replace(/^Bearer /, '');
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+      if (!local || req.headers.origin || !runtimeToken || Buffer.byteLength(runtimeToken) !== Buffer.byteLength(supplied) || !crypto.timingSafeEqual(Buffer.from(runtimeToken), Buffer.from(supplied))) {
+        sendJson(res, 403, { error: { code: 'TRUSTED_SERVICE_REQUIRED', message: 'Trusted local service required' } }); return;
+      }
+      if (route !== 'POST /api/internal/workbench-event') { sendJson(res, 404, { error: { code: 'NOT_FOUND' } }); return; }
+      try { sendJson(res, 200, await bridge.captureWorkbenchEvent(JSON.parse(await readBody(req)))); }
+      catch (error) { sendJson(res, 409, { error: { code: error.code || 'CAPTURE_INVALID', message: '工作台会话尚未写入，请检查项目接线。' } }); }
+      return;
+    }
+
+    if (route === 'GET /api/journals') {
+      sendJson(res, 200, { journals: await bridge.listJournals() });
+      return;
+    }
+    if (route === 'GET /api/journal/high-watermark') {
+      sendJson(res, 200, { journalId, sequence: await bridge.getHighWatermark({ journalId }) });
+      return;
+    }
+    if (route === 'GET /api/journal/events') {
+      const from = Number(url.searchParams.get('fromSequence') || 1);
+      const limit = Number(url.searchParams.get('limit') || 100);
+      if (!Number.isSafeInteger(from) || from < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+        sendJson(res, 400, { error: { code: 'INVALID_ARGUMENT', message: 'invalid journal range' } });
+        return;
+      }
+      sendJson(res, 200, { journalId, events: await bridge.readEvents({ journalId, fromSequence: from, limit }) });
+      return;
+    }
+    if (route === 'GET /api/consumers') {
+      sendJson(res, 200, { consumers: await bridge.listConsumers() });
+      return;
+    }
+    if (route === 'POST /api/consumers/register' || route === 'POST /api/consumers/ack') {
+      const body = JSON.parse(await readBody(req));
+      const result = route.endsWith('/register')
+        ? await bridge.registerConsumer(body.name, body.meta || {})
+        : await bridge.ackConsumerCursor(body.name, body.sequence, { journalId: body.journalId || 'global' });
+      sendJson(res, 200, result);
+      return;
+    }
 
     if (route === 'GET /api/health') {
       const journal = existingJournal(globalDir);

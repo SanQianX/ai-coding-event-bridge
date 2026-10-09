@@ -9,6 +9,9 @@ const { compactJournal } = require('./compaction');
 const { journalFor, globalJournalDir } = require('./journal-router');
 const projectRegistry = require('./project-registry');
 const { sealCommitConversations, sealDirFor } = require('./commit-projection');
+const { resolveRepoContext } = require('./repo-context');
+const { validateAndNormalizeEvent } = require('./event-schema');
+const { notifyConsumers } = require('../connectors/claude-code/notify');
 
 /**
  * Stable host-facing facade over the Bridge runtime. Hosts (Project-Knowledge,
@@ -32,24 +35,58 @@ function createBridge({ homeDir } = {}) {
   // Pure reads on a machine where no Bridge home exists yet must not
   // materialize one: status queries stay side-effect free.
   const homeExists = () => fs.existsSync(home);
+  const selectJournal = (journalId = 'global') => {
+    if (journalId === 'global') return getJournal();
+    const project = projectRegistry.listProjects(home).find(p => p.id === journalId);
+    if (!project) throw Object.assign(new Error('journal is not registered'), { code: 'JOURNAL_NOT_FOUND' });
+    return journalFor(home, project.id);
+  };
 
   return {
     homeDir: home,
 
-    async getHighWatermark() {
+    async listJournals() {
+      return [{ journalId: 'global', projectId: null }, ...projectRegistry.listProjects(home).map(p => ({ journalId: p.id, projectId: p.id, repoPath: p.path }))];
+    },
+
+    async getHighWatermark({ journalId = 'global' } = {}) {
       if (!homeExists()) return 0;
-      const bounds = await getJournal().getBounds();
+      const bounds = await selectJournal(journalId).getBounds();
       return bounds.lastSequence;
     },
 
     async readEvents(options = {}) {
-      return getJournal().readEvents(options);
+      return selectJournal(options.journalId).readEvents(options);
     },
 
     // Host-side injection for tests and explicit workflows; automatic capture
     // flows through the connectors' canonical append path.
     async appendConversationEvent(event) {
       return getJournal().appendConversationEvent(event);
+    },
+
+    async captureWorkbenchEvent(input) {
+      if (!['user_prompt', 'assistant_response', 'session_end'].includes(input?.eventType)
+        || typeof input.projectPath !== 'string' || !path.isAbsolute(input.projectPath)
+        || typeof input.eventKey !== 'string' || !input.eventKey.startsWith('workbench:')
+        || !input.sessionId || !input.turnId || input.content && (typeof input.content !== 'string' || input.content.length > 200000)) {
+        throw Object.assign(new Error('Invalid native workbench event'), { code: 'CAPTURE_INVALID' });
+      }
+      const repo = await resolveRepoContext(input.projectPath);
+      const project = projectRegistry.findProject(home, repo.repoIdentity);
+      if (!project || fs.realpathSync(project.path) !== fs.realpathSync(input.projectPath)) {
+        throw Object.assign(new Error('Workbench project is not registered'), { code: 'PROJECT_NOT_REGISTERED' });
+      }
+      const event = validateAndNormalizeEvent({
+        source: input.source, eventType: input.eventType, role: input.eventType === 'user_prompt' ? 'user' : input.eventType === 'assistant_response' ? 'assistant' : null,
+        content: input.eventType === 'session_end' ? undefined : input.content, sessionId: input.sessionId, turnId: input.turnId, eventKey: input.eventKey,
+        repoIdentity: repo.repoIdentity, projectPath: repo.projectPath, branch: repo.branch, headAtCapture: repo.headAtCapture,
+        capturedAt: typeof input.capturedAt === 'string' && !Number.isNaN(Date.parse(input.capturedAt)) ? input.capturedAt : new Date().toISOString(),
+        identityConfidence: 'exact', captureStatus: 'complete', meta: { origin: 'claude-ai-workbench', outcome: input.outcome === 'failed' ? 'failed' : 'completed' },
+      });
+      const appended = await journalFor(home, repo.repoIdentity).appendConversationEvent(event);
+      await notifyConsumers(home, { sequence: appended.sequence, eventId: appended.eventId });
+      return { status: 'captured', ...appended };
     },
 
     async appendCommitBoundary({ projectId, repoIdentity, commitSha, parentShas, parents, branch, subject, committedAt, operationId, meta } = {}) {
@@ -105,7 +142,8 @@ function createBridge({ homeDir } = {}) {
             // exists on disk, drop the sealed prefix. On any miss the prefix
             // stays and the next boundary's seal window covers it (self-heal).
             if (projection.sealed || (projection.reason === 'already-sealed' && fs.existsSync(projection.path))) {
-              const trim = await journal.trimThrough(result.sequence);
+              const minAck = await getRegistry().getMinAck({ journalId: project.id });
+              const trim = await journal.trimThrough(minAck === null ? result.sequence : Math.min(result.sequence, minAck));
               projection.trimmedThrough = trim.trimmedThrough;
             }
           }
@@ -115,6 +153,7 @@ function createBridge({ homeDir } = {}) {
       }
       return {
         sequence: result.sequence,
+        journalId: routed ? projectRegistry.findProject(home, repoIdentity).id : 'global',
         bridgeCursorAtCommit,
         openTurnIdsAtCommit: result.openTurnIdsAtCommit,
         previousRepoBoundarySequence: result.previousRepoBoundarySequence,
@@ -138,16 +177,18 @@ function createBridge({ homeDir } = {}) {
       return getRegistry().getConsumers();
     },
 
-    async ackConsumerCursor(name, sequence) {
-      return getRegistry().ackConsumerCursor(name, sequence);
+    async ackConsumerCursor(name, sequence, options = {}) {
+      const high = await this.getHighWatermark(options);
+      if (sequence > high) throw Object.assign(new Error('ack exceeds journal high watermark'), { code: 'ACK_OUT_OF_RANGE' });
+      return getRegistry().ackConsumerCursor(name, sequence, options);
     },
 
     async unregisterConsumer(name) {
       return getRegistry().unregisterConsumer(name);
     },
 
-    async compact({ throughSequence } = {}) {
-      return compactJournal(getJournal(), getRegistry(), { throughSequence });
+    async compact({ throughSequence, journalId = 'global' } = {}) {
+      return compactJournal(selectJournal(journalId), getRegistry(), { throughSequence, journalId });
     },
 
     async getHealth() {

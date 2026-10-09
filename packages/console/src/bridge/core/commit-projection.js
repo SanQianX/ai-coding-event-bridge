@@ -206,7 +206,7 @@ async function sealCommitConversations({ journal, sealDir, boundary } = {}) {
  * commits/<day>-uncommitted-<seq>.md, then trim the journal. Idempotent per
  * run: nothing happens while no new events arrived after the last boundary.
  */
-async function sealUncommittedTail({ journal, sealDir, maxAgeDays = 14, now = Date.now() } = {}) {
+async function sealUncommittedTail({ journal, sealDir, maxAgeDays = 14, now = Date.now(), throughSequence = Infinity } = {}) {
   if (!journal) throw new Error('sealUncommittedTail requires journal');
   if (typeof sealDir !== 'string' || !sealDir) throw new Error('sealUncommittedTail requires sealDir');
   const records = await journal.readEvents({});
@@ -236,7 +236,7 @@ async function sealUncommittedTail({ journal, sealDir, maxAgeDays = 14, now = Da
   };
   const result = await sealCommitConversations({ journal, sealDir, boundary });
   if (result.sealed || (result.reason === 'already-sealed' && fs.existsSync(result.path))) {
-    const trim = await journal.trimThrough(appended.sequence);
+    const trim = await journal.trimThrough(Math.min(appended.sequence, throughSequence));
     return { ...result, trimmedThrough: trim.trimmedThrough };
   }
   return result;
@@ -248,7 +248,7 @@ async function sealUncommittedTail({ journal, sealDir, maxAgeDays = 14, now = Da
  * successful seal and a crashed trim, and adopts pre-upgrade journals that
  * already carry sealed commits.
  */
-async function reconcileTrim({ journal, sealDir } = {}) {
+async function reconcileTrim({ journal, sealDir, throughSequence = Infinity } = {}) {
   if (!journal) throw new Error('reconcileTrim requires journal');
   if (typeof sealDir !== 'string' || !sealDir) throw new Error('reconcileTrim requires sealDir');
   const records = await journal.readEvents({});
@@ -258,7 +258,7 @@ async function reconcileTrim({ journal, sealDir } = {}) {
     .sort((a, b) => b.sequence - a.sequence);
   for (const boundary of boundaries) {
     if (fs.existsSync(path.join(sealDir, `${String(boundary.commitSha).toLowerCase()}.md`))) {
-      const trim = await journal.trimThrough(boundary.sequence);
+      const trim = await journal.trimThrough(Math.min(boundary.sequence, throughSequence));
       return { trimmedThrough: trim.trimmedThrough, commitSha: boundary.commitSha, reason: trim.reason };
     }
   }

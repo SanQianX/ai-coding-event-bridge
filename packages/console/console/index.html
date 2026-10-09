@@ -185,6 +185,10 @@
   .btn-upg { height: 26px; padding: 0 12px; border-radius: 7px; background: var(--text); color: #16171a; font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .btn-upg:hover { background: #fff; }
   .btn-upg:disabled { opacity: .45; cursor: not-allowed; }
+  body.kb-embedded[data-kb-theme="light"] { --bg-side:#f8f9fb; --bg-main:#fff; --bg-card:#f8f9fb; --bg-input:#edf1f4; --bg-hover:#edf1f4; --bg-active:#e6edf3; --line:#dce2e8; --line-soft:#dce2e8; --text:#202733; --text-2:#687587; --text-3:#8e99a7; --label:#687587; --blue:#516f89; --green:#397761; --red:#a05252; color-scheme:light; }
+  body.kb-embedded[data-kb-theme="dark"] { --bg-side:#1b2028; --bg-main:#20252d; --bg-card:#252b34; --bg-input:#2c333e; --bg-hover:#2c333e; --bg-active:#293748; --line:#39424f; --line-soft:#39424f; --text:#e6ebf0; --text-2:#a0aaba; --text-3:#788393; --label:#a0aaba; --blue:#8aa8cf; --green:#81b29a; --red:#d88b8b; color-scheme:dark; }
+  body.kb-embedded .topbar h1 { display:none; }
+  body.kb-embedded .topbar { padding:8px 24px; }
 </style>
 </head>
 <body>
@@ -226,7 +230,7 @@
         <span class="svg-i" data-i="gear"></span>
       </button>
       <div class="hist-wrap">
-        <button class="hist-btn" id="hist-btn">🕘 历史</button>
+        <button class="hist-btn" id="hist-btn">历史</button>
         <div class="hist-pop" id="hist-pop">
           <div class="ph">历史对话</div>
           <div id="hist-list"></div>
@@ -333,8 +337,14 @@ function toast(ok, text) {
   }, 3200);
 }
 
+var embedQuery = new URLSearchParams(location.search);
+var embedded = embedQuery.get('embed') === '1';
+var moduleApiBase = /^\/api\/[a-z0-9/-]+$/i.test(embedQuery.get('apiBase') || '') ? embedQuery.get('apiBase').replace(/\/$/, '') : '/api';
+var projectEpoch = 0;
+var selectionEpoch = 0;
+var embedVisible = true;
 function api(path, options) {
-  return fetch(path, options).then(function (res) {
+  return fetch(path.replace(/^\/api(?=\/|$)/, moduleApiBase), options).then(function (res) {
     return res.text().then(function (body) {
       var payload = null;
       try { payload = body ? JSON.parse(body) : null; } catch (_) { payload = null; }
@@ -376,7 +386,7 @@ function timeOf(iso) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
-var SOURCE_LABELS = { 'claude-code': 'Claude', claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' };
+var SOURCE_LABELS = { 'claude-code': 'Claude', claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', zcode: 'ZCode' };
 
 /* ---------- 状态 ---------- */
 
@@ -490,6 +500,7 @@ function loadMoreTurns() {
 
 function fetchTurns(options) {
   if (!state.project) return Promise.resolve();
+  var epoch = projectEpoch;
   var append = options && options.append;
   state.loadingTurns = true;
   if (!append) { state.turns = []; state.cursor = null; }
@@ -498,13 +509,14 @@ function fetchTurns(options) {
     + '&order=desc'
     + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
   return api(query).then(function (payload) {
-    if (!state.project || payload.project !== state.project.id) return; // 切换已发生，丢弃过期响应
+    if (epoch !== projectEpoch || !state.project || payload.project !== state.project.id) return;
     state.turns = state.turns.concat(payload.turns || []);
     state.cursor = payload.nextCursor || null;
     state.totalTurns = payload.totalTurns || state.turns.length;
     state.loadingTurns = false;
     renderLive();
   }).catch(function (err) {
+    if (epoch !== projectEpoch) return;
     state.loadingTurns = false;
     renderLive();
     toast(false, '加载对话失败：' + err.message);
@@ -514,6 +526,7 @@ function fetchTurns(options) {
 function selectProject(id, options) {
   var project = state.projects.find(function (p) { return p.id === id; });
   if (!project) return;
+  projectEpoch++;
   state.project = project;
   state.turns = [];
   state.cursor = null;
@@ -688,13 +701,14 @@ document.getElementById('hist-list').addEventListener('click', function (ev) {
   document.getElementById('back-btn').classList.add('show');
   showDocLoading(true);
   // 懒加载：此刻才请求这一份文档，其余历史永不加载
-  fetch('/api/commits/' + encodeURIComponent(file) + '?project=' + encodeURIComponent(state.project.id))
+  var epoch = projectEpoch;
+  fetch(moduleApiBase + '/commits/' + encodeURIComponent(file) + '?project=' + encodeURIComponent(state.project.id))
     .then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.text();
     })
     .then(function (text) {
-      if (state.currentDocFile !== file) return; // 已切换到别的文档/项目
+      if (epoch !== projectEpoch || state.currentDocFile !== file) return;
       var parsed = parseSealedDoc(text);
       var title = doc.subject || parsed.fm.subject || (parsed.fm.commitSha || file).slice(0, 12);
       var subParts = [];
@@ -901,20 +915,32 @@ setInterval(loadHealth, 30000);
  * URL 参数：?embed=1 进入嵌入态（默认折叠，sidebar=1 保持展开）。
  * 就绪后回发 {type:'kb:ready', app:'event-bridge'}；独立打开时不受控、侧栏恒显。 */
 function embedAllowedOrigin(origin) {
-  if (origin === 'null') return true; // file:// 壳
-  try { const u = new URL(origin); return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]'; }
+  try { return origin === (document.referrer ? new URL(document.referrer).origin : location.origin); }
   catch { return false; }
 }
 function setEmbedSideVisible(visible) { document.body.classList.toggle('embed-collapse', !visible); }
-window.addEventListener('message', function (ev) {
-  if (!embedAllowedOrigin(ev.origin)) return;
+window.addEventListener('message', async function (ev) {
+  if (ev.source !== window.parent || !embedAllowedOrigin(ev.origin)) return;
   const d = ev.data;
   if (!d || typeof d !== 'object') return;
+  if (d.type === 'kb:theme') { document.body.dataset.kbTheme = d.theme === 'dark' ? 'dark' : 'light'; return; }
+  if (d.type === 'kb:visibility') { embedVisible = d.visible === true; return; }
+  if (d.type === 'kb:refresh' && embedVisible && state.project) { fetchTurns(); refreshHist(); return; }
+  if (d.type === 'kb:select-project') {
+    var requestEpoch = ++selectionEpoch;
+    var find = function () { return state.projects.find(function (p) { return p.id === d.project || p.path === d.project; }); };
+    if (!find()) await loadProjects();
+    if (requestEpoch !== selectionEpoch) return;
+    var p = find();
+    if (p) selectProject(p.id);
+    ev.source.postMessage({ type: 'kb:projects', app: 'event-bridge', ok: !!p, projectId: p && p.id, requestId: d.requestId }, ev.origin);
+    return;
+  }
   if (d.type === 'kb:sidebar') setEmbedSideVisible(!!d.visible);
 });
 (function () {
   const q = new URLSearchParams(location.search);
-  if (q.get('embed') === '1') setEmbedSideVisible(q.get('sidebar') !== '1');
+  if (q.get('embed') === '1') { document.body.classList.add('kb-embedded'); document.body.dataset.kbTheme = q.get('theme') === 'dark' ? 'dark' : 'light'; setEmbedSideVisible(q.get('sidebar') === '1'); }
   if (window.parent !== window) window.parent.postMessage({ type: 'kb:ready', app: 'event-bridge' }, '*');
 })();
 </script>

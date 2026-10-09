@@ -59,7 +59,7 @@ class ConsumerRegistry {
     });
   }
 
-  async ackConsumerCursor(name, sequence) {
+  async ackConsumerCursor(name, sequence, { journalId = 'global' } = {}) {
     if (!Number.isInteger(sequence) || sequence < 0) {
       throw new TypeError('ack sequence must be a non-negative integer');
     }
@@ -71,12 +71,14 @@ class ConsumerRegistry {
         err.code = 'CONSUMER_NOT_REGISTERED';
         throw err;
       }
-      if (sequence > entry.ack) {
-        entry.ack = sequence;
+      if (journalId === 'global') entry.ack = Math.max(entry.ack || 0, sequence);
+      else {
+        if (!consumesJournal(entry, journalId)) throw new Error(`consumer ${name} is not registered for journal ${journalId}`);
+        entry.cursors = { ...(entry.cursors || {}), [journalId]: Math.max((entry.cursors || {})[journalId] || 0, sequence) };
       }
       entry.lastSeenAt = new Date().toISOString();
       this._write(state);
-      return { name, ack: entry.ack };
+      return { name, journalId, ack: journalId === 'global' ? entry.ack : entry.cursors[journalId] };
     });
   }
 
@@ -88,14 +90,22 @@ class ConsumerRegistry {
     });
   }
 
-  async getMinAck() {
+  async getMinAck({ journalId = 'global' } = {}) {
     if (!fs.existsSync(this.consumersFile)) return null;
     return this._withLock(async () => {
       const state = this._read();
-      if (state.consumers.length === 0) return null;
-      return state.consumers.reduce((min, c) => Math.min(min, c.ack), Number.POSITIVE_INFINITY);
+      const consumers = state.consumers.filter(c => consumesJournal(c, journalId));
+      if (consumers.length === 0) return null;
+      return consumers.reduce((min, c) => Math.min(min, journalId === 'global' ? c.ack || 0 : (c.cursors || {})[journalId] || 0), Number.POSITIVE_INFINITY);
     });
   }
 }
 
-module.exports = { ConsumerRegistry };
+// Legacy consumers are global-only. An explicit wildcard protects journals
+// created after registration too; an offline consumer is never expired.
+function consumesJournal(consumer, journalId) {
+  const journals = consumer.meta && consumer.meta.journals;
+  return Array.isArray(journals) ? journals.includes('*') || journals.includes(journalId) : journalId === 'global';
+}
+
+module.exports = { ConsumerRegistry, consumesJournal };

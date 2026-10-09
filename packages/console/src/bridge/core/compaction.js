@@ -5,8 +5,8 @@
  * Never removes data beyond minAck; requires at least one registered consumer;
  * runs under the same journal lock as appendEvent/appendCommitBoundary.
  */
-async function compactJournal(journal, consumerRegistry, { throughSequence } = {}) {
-  const minAck = await consumerRegistry.getMinAck();
+async function compactJournal(journal, consumerRegistry, { throughSequence, journalId = 'global' } = {}) {
+  const minAck = await consumerRegistry.getMinAck({ journalId });
   if (minAck === null || minAck === undefined) {
     return { compactedThrough: null, removedCount: 0, reason: 'no-consumers' };
   }

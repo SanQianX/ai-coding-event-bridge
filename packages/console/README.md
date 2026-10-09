@@ -48,6 +48,15 @@ otherwise.
 | `GET /api/turns?project&date&cursor&limit` | Merged turns + `annotations` (commit shas per turn) |
 | `GET /api/sessions?project=` | Session index |
 | `GET /api/search?q&project&limit` | Substring search over conversation bodies |
+| `GET /api/journals` | Global and registered project journal identities |
+| `POST /api/internal/workbench-event` | Private native Workbench capture; runtime token, loopback, no browser Origin |
+
+The private capture route uses `KB_EVENT_BRIDGE_RUNTIME_TOKEN`. It resolves the
+Git identity and requires an already registered code directory. Stable event
+keys deduplicate retries; only original prompts, successful final answers and
+turn endings enter the same bridge journal used by hooks. Credentials and
+injected knowledge are not accepted as event metadata. Shell proxies must not
+expose this route to browser callers.
 
 Turn merging: for a registered project, the project journal and the global
 journal (legacy pre-import events) are both read, filtered by repo identity,
@@ -57,7 +66,9 @@ one journal's sequence space; `openTurnIdsAtCommit` binding works across both.
 ## Notes
 
 - Node >= 18, CommonJS, zero runtime dependencies beyond the core package.
-- The console never writes journals; it only reads them and mutates
-  `projects.json` on import/unregister.
-- Consumer-cursor compaction applies to the global journal only — project
-  journals are archival stores and are not auto-compacted.
+- Public query APIs read journals; project import/unregister changes registration.
+  The authenticated Workbench endpoint delegates capture to the core bridge,
+  not a second conversation database.
+- Consumer cursors and ACKs are journal-specific. Compaction may retire sealed
+  evidence only after every applicable consumer has acknowledged that journal;
+  creating a commit archive is not proof that the engine consumed it.

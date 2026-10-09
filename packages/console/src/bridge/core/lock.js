@@ -47,7 +47,7 @@ class CrossProcessLock {
       try {
         const st = fs.statSync(this.lockFile);
         if (Date.now() - st.mtimeMs > this.staleMs) {
-          fs.rmSync(this.lockFile, { force: true });
+          fs.unlinkSync(this.lockFile);
           continue;
         }
       } catch (_) {
@@ -64,9 +64,11 @@ class CrossProcessLock {
     if (!this._held) return;
     this._held = false;
     try {
-      fs.rmSync(this.lockFile, { force: true });
-    } catch (_) {
-      // Already removed (stale takeover by another process).
+      // A lock is one file, never a directory. unlink also avoids Node 24's
+      // Windows rm(force) no-op on some non-ASCII filenames.
+      fs.unlinkSync(this.lockFile);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') throw error;
     }
   }
 

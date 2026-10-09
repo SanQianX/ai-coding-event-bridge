@@ -2,7 +2,7 @@
 
 const { isValidRepoIdentityV1 } = require('./repo-context');
 
-const SOURCES = ['claude-code', 'codex', 'opencode'];
+const SOURCES = ['claude-code', 'codex', 'opencode', 'zcode'];
 const IDENTITY_CONFIDENCE_LEVELS = ['exact', 'partial', 'unavailable'];
 const CAPTURE_STATUSES = ['complete', 'partial', 'gap'];
 const ROLES = ['user', 'assistant'];

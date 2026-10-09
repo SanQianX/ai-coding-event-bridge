@@ -52,8 +52,12 @@ async function main(argv = process.argv.slice(2)) {
   const home = bridgeHome(get('home'));
   const port = Number(get('port') || 8790);
   const host = get('host') || '127.0.0.1';
-  const server = http.createServer(createConsoleServer({ home }));
+  const server = http.createServer(createConsoleServer({ home, runtimeToken: process.env.KB_EVENT_BRIDGE_RUNTIME_TOKEN }));
   await new Promise((resolve) => server.listen(port, host, resolve));
+  let stopping = false;
+  const stop = () => { if (stopping) return; stopping = true; server.closeAllConnections?.(); server.close(() => process.exit(0)); };
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
+  process.on('message', message => { if (message?.type === 'kb:shutdown') stop(); });
   console.log(`ai-coding-event-bridge console serving on http://${host}:${port}`);
   console.log(`  home: ${home}`);
   console.log(`  import projects from the sidebar; conversations of imported`);
