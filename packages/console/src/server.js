@@ -536,7 +536,7 @@ function createConsoleServer({ home, runtimeToken }) {
     }
 
     if (route === 'GET /api/system/agents') {
-      const agents = await detectAgents();
+      const agents = await detectAgents({ homeDir: home });
       let activeRuntimeVersion = null;
       let runtimeVersions = [];
       const runtimeRoot = path.join(home, 'runtime');

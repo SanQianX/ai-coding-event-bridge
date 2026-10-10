@@ -39,6 +39,13 @@ otherwise.
 | --- | --- |
 | `GET /api/health` | `{ ok, home, registeredProjects, first/lastSequence }` |
 | `GET /api/system/agents` | Detect installed agent tools (Claude Code / Codex / OpenCode: CLI, config, hook wiring) + bridge runtime info + consumers |
+
+Agent detection distinguishes a found command/config from installed capture.
+Consumer registration never installs an Agent hook. In a host-embedded console,
+“管理 Agent 采集” opens the host's connector installer. ZCode status requires both
+managed events and `hooks.enabled`; hooks installed under an explicit Bridge
+home read that home's runtime even when the external Agent inherits no home
+environment variable. ZCode's Claude-compatible payloads retain source `zcode`.
 | `POST /api/system/upgrade-runtime` | Materialize/activate the runtime at the core package version (designed same-major upgrade path) |
 | `GET /api/system/pick-folder` | Native folder dialog (win32; 501 elsewhere) |
 | `GET /api/projects` | Registered + auto-discovered projects with turn counts |

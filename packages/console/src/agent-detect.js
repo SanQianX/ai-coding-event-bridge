@@ -44,7 +44,7 @@ function mentionsShim(text) {
   return typeof text === 'string' && (text.includes('bridge-hook.cjs') || text.includes('--bridge-base64'));
 }
 
-async function detectAgents({ claudeSettingsFile, codexConfigFile, opencodePluginsDir, zcodeConfigFile } = {}) {
+async function detectAgents({ homeDir, claudeSettingsFile, codexConfigFile, opencodePluginsDir, zcodeConfigFile } = {}) {
   const home = os.homedir();
 
   const claudeFiles = [
@@ -52,18 +52,19 @@ async function detectAgents({ claudeSettingsFile, codexConfigFile, opencodePlugi
     path.join(path.dirname(claudeSettingsFile || path.join(home, '.claude', 'settings.json')), 'settings.local.json')
   ];
   const claudeStatus = await core.installers.claudeCode.statusClaudeCodeHook({
+    homeDir,
     settingsFile: claudeFiles[0]
   });
   const claudeConfigFound = claudeFiles.some(fileExists);
   const claudeTextHooked = claudeFiles.some((file) => mentionsShim(readTextIfAny(file)));
 
   const codexFile = codexConfigFile || path.join(home, '.codex', 'config.toml');
-  const codexStatus = await core.installers.codex.statusCodexNotify({ configFile: codexFile });
+  const codexStatus = await core.installers.codex.statusCodexNotify({ homeDir, configFile: codexFile });
   const codexConfigFound = fileExists(codexFile);
   const codexTextHooked = mentionsShim(readTextIfAny(codexFile));
 
   const opencodeDir = opencodePluginsDir || path.join(home, '.config', 'opencode', 'plugin');
-  const opencodeStatus = await core.installers.openCode.statusOpenCodePlugin({ pluginsDir: opencodeDir });
+  const opencodeStatus = await core.installers.openCode.statusOpenCodePlugin({ homeDir, pluginsDir: opencodeDir });
   let opencodePluginHooked = Boolean(opencodeStatus.installed);
   if (!opencodePluginHooked) {
     try {
@@ -79,8 +80,7 @@ async function detectAgents({ claudeSettingsFile, codexConfigFile, opencodePlugi
   }
 
   const zcodeFile = zcodeConfigFile || path.join(home, '.zcode', 'cli', 'config.json');
-  const zcodeStatus = await core.installers.zcode.statusZcodeHook({ configFile: zcodeFile });
-  const zcodeConfigText = readTextIfAny(zcodeFile);
+  const zcodeStatus = await core.installers.zcode.statusZcodeHook({ homeDir, configFile: zcodeFile });
 
   return [
     {
@@ -118,7 +118,7 @@ async function detectAgents({ claudeSettingsFile, codexConfigFile, opencodePlugi
       label: 'ZCode',
       cliFound: commandExists('zcode'),
       configFound: fileExists(zcodeFile),
-      hookInstalled: Boolean(zcodeStatus.installed) || mentionsShim(zcodeConfigText),
+      hookInstalled: Boolean(zcodeStatus.installed),
       managed: Boolean(zcodeStatus.installed),
       detail: zcodeStatus.thirdPartyCount ? `配置中另有 ${zcodeStatus.thirdPartyCount} 条第三方 hook（保留不动）` : null
     }

@@ -13,14 +13,14 @@ const { notifyConsumers } = require('./notify');
  * Internal host SDK sessions (AI_CODING_EVENT_BRIDGE_CAPTURE=0) are ignored
  * before any Git/journal work happens.
  */
-async function main({ home, payload }) {
+async function main({ home, payload, source }) {
   if (isCaptureDisabled(process.env, payload)) {
     return captureDisabledResult();
   }
   if (!payload || typeof payload !== 'object') {
     return { status: 'ignored' };
   }
-  const event = normalizeClaudeCode(payload);
+  const event = normalizeClaudeCode(payload, source);
   if (!event) {
     return { status: 'ignored' };
   }
@@ -38,8 +38,8 @@ async function main({ home, payload }) {
   return { status: 'captured', sequence: appended.sequence, turnId: appended.turnId };
 }
 
-function mainFailOpen({ home, payload }) {
-  return main({ home, payload }).catch(() => ({ status: 'fail-open' }));
+function mainFailOpen({ home, payload, source }) {
+  return main({ home, payload, source }).catch(() => ({ status: 'fail-open' }));
 }
 
 module.exports = { main, mainFailOpen };

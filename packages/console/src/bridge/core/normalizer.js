@@ -22,9 +22,9 @@ function hookEventName(raw) {
   return raw.hook_event_name || raw.hookName || raw.hook_name || null;
 }
 
-function normalizeClaudeCode(raw) {
+function normalizeClaudeCode(raw, source = 'claude-code') {
   if (!raw || typeof raw !== 'object') return null;
-  const base = { source: 'claude-code' };
+  const base = { source: source === 'zcode' ? 'zcode' : 'claude-code' };
   if (hookEventName(raw) === 'UserPromptSubmit' || raw.eventType === 'user_prompt') {
     const content = typeof raw.prompt === 'string' ? raw.prompt : null;
     const event = {

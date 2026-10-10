@@ -15,10 +15,9 @@ const SHIM_SOURCE = `#!/usr/bin/env node
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 function home() {
-  return process.env.AI_CODING_EVENT_BRIDGE_HOME || path.join(os.homedir(), '.ai-coding-event-bridge');
+  return process.env.AI_CODING_EVENT_BRIDGE_HOME || path.resolve(__dirname, '..');
 }
 
 function readStdin() {
@@ -76,7 +75,9 @@ async function main({ payload, home, argv, env }) {
     // connector — never fall through to Codex just because session_id exists.
     if (payload.hookName || payload.hook_event_name || payload.hook_name) {
       const claudeEntry = require('./bridge/connectors/claude-code/hook-entry.js');
-      return claudeEntry.mainFailOpen({ home, payload, argv, env });
+      const sourceIndex = Array.isArray(argv) ? argv.indexOf('--source') : -1;
+      const source = sourceIndex >= 0 && argv[sourceIndex + 1] === 'zcode' ? 'zcode' : 'claude-code';
+      return claudeEntry.mainFailOpen({ home, payload, source, argv, env });
     }
     if (payload.type === 'user' || payload.type === 'assistant') {
       const opencodeEntry = require('./bridge/connectors/opencode/hook-entry.js');

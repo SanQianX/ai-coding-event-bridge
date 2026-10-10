@@ -27,7 +27,7 @@ function shimPathFor(homeDir) {
 // process hooks (argument vector, no shell) are the portable form; bare
 // `node` survives Node upgrades, unlike a baked-in absolute executable path.
 function managedHook(shimPath) {
-  return { type: 'process', command: 'node', args: [shimPath], timeoutMs: 15000 };
+  return { type: 'process', command: 'node', args: [shimPath, '--source', 'zcode'], timeoutMs: 15000 };
 }
 
 function isManagedHook(hook, shimPath) {
@@ -69,9 +69,15 @@ function upsertManagedEntries(config, shimPath) {
     if (!Array.isArray(events[eventName])) {
       events[eventName] = [];
     }
-    const alreadyManaged = events[eventName].some(
-      (group) => group && Array.isArray(group.hooks) && group.hooks.some((hook) => isManagedHook(hook, shimPath))
-    );
+    let alreadyManaged = false;
+    for (const group of events[eventName]) {
+      if (!group || !Array.isArray(group.hooks)) continue;
+      group.hooks = group.hooks.map(hook => {
+        if (!isManagedHook(hook, shimPath)) return hook;
+        alreadyManaged = true;
+        return managedHook(shimPath);
+      });
+    }
     if (alreadyManaged) continue;
     events[eventName].push({ hooks: [managedHook(shimPath)] });
     changed.push(eventName);
@@ -87,11 +93,15 @@ function removeManagedEntries(config, shimPath) {
   for (const eventName of Object.keys(config.hooks.events)) {
     const groups = config.hooks.events[eventName];
     if (!Array.isArray(groups)) continue;
-    const kept = groups.filter(
-      (group) =>
-        !(group && Array.isArray(group.hooks) && group.hooks.some((hook) => isManagedHook(hook, shimPath)))
-    );
-    if (kept.length !== groups.length) removed.push(eventName);
+    let changed = false;
+    const kept = groups.map(group => {
+      if (!group || !Array.isArray(group.hooks)) return group;
+      const hooks = group.hooks.filter(hook => !isManagedHook(hook, shimPath));
+      if (hooks.length === group.hooks.length) return group;
+      changed = true;
+      return hooks.length ? { ...group, hooks } : null;
+    }).filter(group => group !== null);
+    if (changed) removed.push(eventName);
     if (kept.length === 0) {
       delete config.hooks.events[eventName];
     } else {
@@ -107,12 +117,14 @@ async function installZcodeHook({ homeDir, consumerName, consumerMeta = {}, regi
   const home = homeDir || path.join(os.homedir(), '.ai-coding-event-bridge');
   const target = configFile || path.join(os.homedir(), '.zcode', 'cli', 'config.json');
   const runtime = await ensureRuntimeHome({ homeDir: home, version });
+  if (runtime.conflict) throw new InstallerError('Bridge 运行版本冲突，未修改 ZCode 配置。');
   const registry = new ConsumerRegistry(home);
   if (consumerName && registerConsumer) {
     await registry.registerConsumer(consumerName, consumerMeta);
   }
   const config = readConfig(target);
   const added = upsertManagedEntries(config, shimPathFor(home));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   writeJsonAtomicSync(target, config);
   return { added, configFile: target, runtime, consumers: (await registry.getConsumers()).map((c) => c.name) };
 }
@@ -161,7 +173,7 @@ async function uninstallZcodeHook({ homeDir, consumerName, unregisterConsumer = 
   const registry = new ConsumerRegistry(home);
   const config = readConfig(target);
   const removed = config.hooks && config.hooks.events ? removeManagedEntries(config, shimPathFor(home)) : [];
-  writeJsonAtomicSync(target, config);
+  if (removed.length) writeJsonAtomicSync(target, config);
   let consumerUnregistered = false;
   if (consumerName && unregisterConsumer) {
     await registry.unregisterConsumer(consumerName);

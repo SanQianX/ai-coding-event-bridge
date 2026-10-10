@@ -856,9 +856,9 @@ function renderSettings() {
     var agentsHtml = payload.agents.map(function (a) {
       var installed = a.cliFound || a.configFound;
       var chips =
-        '<span class="st-chip ' + (installed ? 'ok' : 'off') + '">' + (installed ? '已安装' : '未安装') + '</span>'
-        + '<span class="st-chip ' + (a.hookInstalled ? 'ok' : 'warn') + '">' + (a.hookInstalled ? '已接入采集' : '未接入') + '</span>';
-      var note = a.detail || (a.hookInstalled ? '' : installed ? '需要通过安装器 / consumer 注册 hook 后才会采集' : '未检测到该工具');
+        '<span class="st-chip ' + (installed ? 'ok' : 'off') + '">' + (a.cliFound ? '检测到命令' : a.configFound ? '检测到配置' : '未检测到') + '</span>'
+        + '<span class="st-chip ' + (a.hookInstalled ? 'ok' : 'warn') + '">' + (a.hookInstalled ? '已配置采集' : '未接入') + '</span>';
+      var note = a.detail || (a.hookInstalled ? '采集配置已存在；实际记录请查看开发会话' : installed ? '需要安装采集 Hook；注册消费者不能代替 Hook' : '后台未发现命令或默认配置，请检查安装路径与运行用户');
       return '<div class="agent-row"><span class="an">' + escapeText(a.label) + '</span>' + chips
         + '<span class="note">' + escapeText(note) + '</span></div>';
     }).join('');
@@ -881,8 +881,12 @@ function renderSettings() {
 
     body.innerHTML =
       '<div class="set-section">AI 编程工具</div>' + agentsHtml
+      + (embedded ? '<button class="btn-upg" id="capture-setup-btn">管理 Agent 采集</button>' : '')
       + '<div class="set-section">Bridge 运行时</div>' + runtimeHtml
       + '<div class="set-section">消费方</div>' + consumersHtml;
+
+    var captureSetup = document.getElementById('capture-setup-btn');
+    if (captureSetup) captureSetup.addEventListener('click', function () { settingsModal.classList.remove('open'); window.parent.postMessage({ type: 'kb:open-integrations', app: 'event-bridge' }, location.origin); });
 
     var upg = document.getElementById('upgrade-btn');
     if (upg) {
@@ -926,6 +930,7 @@ window.addEventListener('message', async function (ev) {
   if (d.type === 'kb:theme') { document.body.dataset.kbTheme = d.theme === 'dark' ? 'dark' : 'light'; return; }
   if (d.type === 'kb:visibility') { embedVisible = d.visible === true; return; }
   if (d.type === 'kb:refresh' && embedVisible && state.project) { fetchTurns(); refreshHist(); return; }
+  if (d.type === 'kb:refresh-agents') { if (settingsModal.classList.contains('open')) renderSettings(); return; }
   if (d.type === 'kb:select-project') {
     var requestEpoch = ++selectionEpoch;
     var find = function () { return state.projects.find(function (p) { return p.id === d.project || p.path === d.project; }); };
