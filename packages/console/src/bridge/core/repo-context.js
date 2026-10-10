@@ -110,7 +110,7 @@ function buildRepoIdentityV1({ workspaceRoot, commonDir = null, remote = null })
  * 1. `git rev-parse --show-toplevel` (authoritative Git working tree root)
  * 2. realpath + canonical separators for the display root
  * 3. workspaceId = sha256 over the comparison form (case-insensitive on win32)
- * 4. commonDir from `git rev-parse --path-format=absolute --git-common-dir`
+ * 4. commonDir from `git rev-parse --git-common-dir`, resolved against cwd
  *    (metadata: worktrees share it, but their workspaceIds differ)
  * 5. normalized origin URL as metadata only — never the primary identity
  *
@@ -135,8 +135,11 @@ async function resolveRepoContext(cwd, { runGit = runGitDefault } = {}) {
 
   let commonDir = null;
   try {
-    const rawCommonDir = await runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
-    if (rawCommonDir) commonDir = path.resolve(realpathBestEffort(rawCommonDir) || rawCommonDir);
+    const rawCommonDir = String(await runGit(['rev-parse', '--git-common-dir'], cwd)).trim();
+    if (rawCommonDir && !/[\r\n\0]/.test(rawCommonDir) && !rawCommonDir.startsWith('--')) {
+      const absoluteCommonDir = path.resolve(cwd, rawCommonDir);
+      commonDir = realpathBestEffort(absoluteCommonDir) || absoluteCommonDir;
+    }
   } catch (_) {
     commonDir = null;
   }

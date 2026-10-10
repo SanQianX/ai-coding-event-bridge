@@ -87,6 +87,19 @@ async function main() {
   const ctxNested = await resolveRepoContext(nested);
   assert.strictEqual(ctxNested.repoIdentity.workspaceId, ctxRoot.repoIdentity.workspaceId);
   assert.strictEqual(ctxNested.repoIdentity.workspaceRoot, ctxRoot.repoIdentity.workspaceRoot);
+  assert.strictEqual(ctxNested.repoIdentity.commonDir, ctxRoot.repoIdentity.commonDir);
+  const legacyGitContext = await resolveRepoContext(nested, {
+    runGit: async (args, cwd) => {
+      assert.ok(!args.some(arg => arg.startsWith('--path-format')));
+      return run('git', args, { cwd });
+    }
+  });
+  assert.strictEqual(legacyGitContext.repoIdentity.commonDir, ctxRoot.repoIdentity.commonDir);
+  const malformedContext = await resolveRepoContext(nested, {
+    runGit: (args, cwd) => args.includes('--git-common-dir')
+      ? Promise.resolve('--unsupported\n.git') : run('git', args, { cwd })
+  });
+  assert.strictEqual(malformedContext.repoIdentity.commonDir, null, 'malformed Git paths never become persisted metadata');
 
   // 2. two separate repos => different workspaceId.
   const ctxCcb = await resolveRepoContext(ccb);
