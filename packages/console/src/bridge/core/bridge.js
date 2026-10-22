@@ -9,7 +9,7 @@ const { compactJournal } = require('./compaction');
 const { journalFor, globalJournalDir } = require('./journal-router');
 const projectRegistry = require('./project-registry');
 const { sealCommitConversations, sealDirFor } = require('./commit-projection');
-const { resolveRepoContext } = require('./repo-context');
+const { resolveRepoContext, comparisonForm } = require('./repo-context');
 const { validateAndNormalizeEvent } = require('./event-schema');
 const { notifyConsumers } = require('../connectors/claude-code/notify');
 
@@ -74,7 +74,7 @@ function createBridge({ homeDir } = {}) {
       }
       const repo = await resolveRepoContext(input.projectPath);
       const project = projectRegistry.findProject(home, repo.repoIdentity);
-      if (!project || fs.realpathSync(project.path) !== fs.realpathSync(input.projectPath)) {
+      if (!project || comparisonForm(fs.realpathSync(project.path)) !== comparisonForm(fs.realpathSync(input.projectPath))) {
         throw Object.assign(new Error('Workbench project is not registered'), { code: 'PROJECT_NOT_REGISTERED' });
       }
       const event = validateAndNormalizeEvent({

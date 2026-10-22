@@ -26,6 +26,14 @@ async function main() {
     assert.equal(captureResponse.status, 200, JSON.stringify(captured));
     assert.equal(captured.status, 'captured');
     const duplicate = await (await post(body)).json(); assert.equal(duplicate.duplicate, true); assert.equal(duplicate.sequence, captured.sequence);
+    if (process.platform === 'win32') {
+      const alternateDrive = repo[0] === repo[0].toLowerCase() ? repo[0].toUpperCase() : repo[0].toLowerCase();
+      const response = await post({ ...body, projectPath: alternateDrive + repo.slice(1) });
+      const result = await response.json();
+      assert.equal(response.status, 200, 'drive-letter case must not change project registration: ' + JSON.stringify(result));
+      assert.equal(result.duplicate, true);
+      assert.equal(result.sequence, captured.sequence);
+    }
     assert.equal((await post({ ...body, eventKey: 'workbench:a:assistant', eventType: 'assistant_response', content: '真实最终回答' })).status, 200);
     assert.equal((await post({ ...body, eventKey: 'workbench:a:end', eventType: 'session_end', content: undefined })).status, 200);
     const bridge = createBridge({ homeDir: root });
