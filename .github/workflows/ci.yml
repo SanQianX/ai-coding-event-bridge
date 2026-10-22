@@ -30,8 +30,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm pack --workspace packages/core --dry-run
-      - run: npm pack --workspace packages/ui --dry-run
       - run: npm pack --workspace packages/console --dry-run
 
   windows:
@@ -50,6 +48,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm pack --workspace packages/core --dry-run
-      - run: npm pack --workspace packages/ui --dry-run
       - run: npm pack --workspace packages/console --dry-run

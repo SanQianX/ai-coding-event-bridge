@@ -21,7 +21,10 @@ async function main() {
     assert.equal((await post(body, {})).status, 403);
     assert.equal((await post(body, { Authorization: 'Bearer native-capture-test', Origin: 'http://127.0.0.1' })).status, 403);
     assert.equal((await post({ ...body, projectPath: root })).status, 409);
-    const captured = await (await post(body)).json(); assert.equal(captured.status, 'captured');
+    const captureResponse = await post(body);
+    const captured = await captureResponse.json();
+    assert.equal(captureResponse.status, 200, JSON.stringify(captured));
+    assert.equal(captured.status, 'captured');
     const duplicate = await (await post(body)).json(); assert.equal(duplicate.duplicate, true); assert.equal(duplicate.sequence, captured.sequence);
     assert.equal((await post({ ...body, eventKey: 'workbench:a:assistant', eventType: 'assistant_response', content: '真实最终回答' })).status, 200);
     assert.equal((await post({ ...body, eventKey: 'workbench:a:end', eventType: 'session_end', content: undefined })).status, 200);
