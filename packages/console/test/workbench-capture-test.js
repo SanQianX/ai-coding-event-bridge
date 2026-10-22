@@ -23,7 +23,10 @@ async function main() {
     assert.equal((await post({ ...body, projectPath: root })).status, 409);
     const captureResponse = await post(body);
     const captured = await captureResponse.json();
-    assert.equal(captureResponse.status, 200, JSON.stringify(captured));
+    if (captureResponse.status !== 200) {
+      const { resolveRepoContext } = require('../src/bridge/core/repo-context');
+      assert.fail(JSON.stringify({ captured, registered: project, resolved: await resolveRepoContext(repo), inputRealpath: fs.realpathSync(repo), registeredRealpath: fs.realpathSync(project.path) }));
+    }
     assert.equal(captured.status, 'captured');
     const duplicate = await (await post(body)).json(); assert.equal(duplicate.duplicate, true); assert.equal(duplicate.sequence, captured.sequence);
     if (process.platform === 'win32') {
