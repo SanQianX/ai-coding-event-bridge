@@ -1,6 +1,6 @@
 {
   "name": "@sanqianx/ai-coding-event-bridge-console",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Durable AI coding event bridge, all in one: capture connectors and installers (Claude Code, Codex, OpenCode, ZCode), journal with commit boundaries and per-commit conversation sealing, headless query, and a local conversation explorer console.",
   "license": "MIT",
   "private": false,
