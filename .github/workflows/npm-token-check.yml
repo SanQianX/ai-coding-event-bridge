@@ -1,0 +1,39 @@
+name: Inspect existing npm publishing credential
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read identity and effective package permissions only
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const https = require('node:https');
+          function get(route) {
+            return new Promise(resolve => {
+              const req = https.get({hostname:'registry.npmjs.org',path:route,headers:{authorization:'Bearer '+process.env.NODE_AUTH_TOKEN}}, res => {
+                let text=''; res.on('data', c => {if(text.length<1000000)text+=c});
+                res.on('end', () => {let data;try{data=JSON.parse(text)}catch{};resolve({http:res.statusCode,data})});
+              });
+              req.setTimeout(15000, () => req.destroy()); req.on('error', () => resolve({http:0}));
+            });
+          }
+          (async () => {
+            if (!process.env.NODE_AUTH_TOKEN) {console.log(JSON.stringify({configured:false}));return;}
+            const who=await get('/-/whoami');
+            const username=who.http===200&&typeof who.data?.username==='string'?who.data.username:undefined;
+            const result={configured:true,identityHttp:who.http,authenticated:!!username};
+            if(username){
+              const access=await get('/-/user/'+encodeURIComponent(username)+'/package');
+              result.permissionsHttp=access.http;
+              result.packages=Object.fromEntries(['@sanqianx/project-knowledge','@sanqianx/claude-ai-workbench','@sanqianx/ai-coding-event-bridge-console'].map(n=>[n,typeof access.data?.[n]==='string'?access.data[n]:'not-reported']));
+            }
+            console.log(JSON.stringify(result));
+          })();
+          NODE
