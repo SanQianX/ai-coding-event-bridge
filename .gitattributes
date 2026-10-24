@@ -1,0 +1,4 @@
+# The declared bin must stay LF end to end: a CRLF checkout on Windows leaks
+# into `npm pack` (the 0.7.3 defect), and npm's install-time fix-bin rewrite
+# of a CRLF hashbang first line then diverges from the published TGZ bytes.
+packages/console/src/bin.js text eol=lf
